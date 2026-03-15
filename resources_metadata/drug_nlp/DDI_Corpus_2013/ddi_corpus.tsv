@@ -1,0 +1,3 @@
+drug1	drug2	ddi_type	sentence
+aspirin	warfarin	advise	Aspirin may increase the anticoagulant effect of warfarin.
+ibuprofen	naproxen	effect	Concomitant ibuprofen and naproxen increases gastrointestinal toxicity.

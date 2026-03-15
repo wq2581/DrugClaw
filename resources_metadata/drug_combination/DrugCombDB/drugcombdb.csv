@@ -1,0 +1,3 @@
+Drug1,Drug2,Cell,Synergy,SynergyType,PMID
+imatinib,dasatinib,K562,18.4,synergy,12345678
+aspirin,clopidogrel,Platelet,7.1,additive,23456789

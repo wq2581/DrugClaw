@@ -1,0 +1,5 @@
+compound_name,gene_names,standard_type,standard_value,standard_unit,data_source,wildtype_or_mutant_acc
+imatinib,ABL1,Ki,21,nM,offline_fixture,P00519
+imatinib,KIT,IC50,100,nM,offline_fixture,P10721
+gefitinib,EGFR,Ki,33,nM,offline_fixture,P00533
+gefitinib,ERBB2,IC50,350,nM,offline_fixture,P04626

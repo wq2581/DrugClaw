@@ -1,0 +1,3 @@
+DRUG_ID,DRUG_NAME,SYNONYMS,TARGET,TARGET_PATHWAY
+1,Erlotinib,Tarceva,EGFR,EGFR signaling
+2,Rapamycin,Sirolimus,MTOR,PI3K/MTOR signaling

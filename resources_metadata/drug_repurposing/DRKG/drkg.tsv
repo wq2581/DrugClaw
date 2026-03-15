@@ -1,0 +1,3 @@
+Compound::imatinib	DRUGBANK::targets::Gene	Gene::ABL1
+Compound::imatinib	GNBR::treats::Disease	Disease::chronic myeloid leukemia
+Compound::metformin	HETIONET::treats::Disease	Disease::type 2 diabetes mellitus

@@ -1,0 +1,3 @@
+drug,disease,score,status,pmid
+imatinib,systemic sclerosis,0.92,Predicted,34567890
+metformin,ovarian cancer,0.81,Investigational,45678901

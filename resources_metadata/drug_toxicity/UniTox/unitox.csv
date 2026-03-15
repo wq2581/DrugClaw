@@ -1,0 +1,3 @@
+drug,toxicity,organ_system,label
+acetaminophen,serious,hepatic,hepatotoxicity
+amiodarone,moderate,cardiac,cardiotoxicity

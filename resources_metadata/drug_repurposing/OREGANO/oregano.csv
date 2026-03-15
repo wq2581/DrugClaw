@@ -1,0 +1,3 @@
+drug,disease,type,evidence
+imatinib,gastrointestinal stromal tumor,repurposing_candidate,literature mining support
+metformin,ovarian cancer,clinical_signal,observational evidence

@@ -1,0 +1,3 @@
+drug	target	relation	disease	pathway
+imatinib	ABL1	inhibits	chronic myeloid leukemia	BCR-ABL signaling
+erlotinib	EGFR	inhibits	non-small cell lung cancer	EGFR signaling

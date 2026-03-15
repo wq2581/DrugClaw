@@ -1,0 +1,3 @@
+drug,disease,score,mechanism
+Imatinib,Chronic myeloid leukemia,0.98,BCR-ABL inhibition
+Baricitinib,COVID-19,0.82,JAK inhibition

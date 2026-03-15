@@ -1,0 +1,14 @@
+[
+  {
+    "drug": "aspirin",
+    "effect": "bleeding",
+    "event_type": "adverse_event",
+    "sentence": "Aspirin treatment was associated with clinically significant bleeding."
+  },
+  {
+    "drug": "metformin",
+    "effect": "glycemic control",
+    "event_type": "therapeutic_outcome",
+    "sentence": "Metformin improved glycemic control in the cohort."
+  }
+]

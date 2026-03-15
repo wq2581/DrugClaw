@@ -1,0 +1,3 @@
+drug	adverse_event	label	sentence
+warfarin	bleeding	positive	The patient developed bleeding after starting warfarin.
+lisinopril	cough	positive	Lisinopril was stopped because of persistent cough.

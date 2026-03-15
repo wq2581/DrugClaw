@@ -1,0 +1,3 @@
+drug,adverse_event,sentence,label
+sertraline,insomnia,Sertraline helped mood but caused persistent insomnia.,ADR
+olanzapine,weight gain,Olanzapine led to substantial weight gain.,ADR

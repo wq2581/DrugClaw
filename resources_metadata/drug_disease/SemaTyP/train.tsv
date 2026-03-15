@@ -1,0 +1,3 @@
+subject	predicate	object	score	pmids
+imatinib	indicated_for	chronic myeloid leukemia	0.96	12345678
+metformin	associated_with	type 2 diabetes mellitus	0.91	23456789

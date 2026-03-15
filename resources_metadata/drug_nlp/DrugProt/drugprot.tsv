@@ -1,0 +1,3 @@
+pmid	entity1	entity2	relation_type	sentence
+12345678	imatinib	ABL1	INHIBITOR	Imatinib inhibits the ABL1 kinase in leukemia cells.
+23456789	clopidogrel	CYP2C19	SUBSTRATE	Clopidogrel is metabolized by CYP2C19.
