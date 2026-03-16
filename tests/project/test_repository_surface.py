@@ -9,6 +9,8 @@ def test_root_does_not_expose_legacy_helper_files() -> None:
     assert not (ROOT / "run_minimal.py").exists()
     assert not (ROOT / "get_reason_detail.py").exists()
     assert not (ROOT / "query_teamplate.py").exists()
+    assert (ROOT / "examples").is_dir()
+    assert (ROOT / "scripts" / "legacy").is_dir()
 
 
 def test_readmes_do_not_contain_machine_specific_cd() -> None:

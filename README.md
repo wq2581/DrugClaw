@@ -37,10 +37,11 @@ In short, DrugClaw is not trying to be just another fluent assistant. Its goal i
 
 ## Quick Start
 
+Run the commands below from the cloned repository root.
+
 ### 1. Install dependencies
 
 ```bash
-cd /data/boom/Agent/DrugClaw
 pip install langgraph openai
 ```
 
@@ -132,19 +133,21 @@ drugclaw demo
 drugclaw run --query "What are the known drug targets of imatinib?"
 ```
 
-### 6. Compatibility shortcut: `run_minimal.py`
+### 6. Optional examples and compatibility entrypoints
 
-This script now acts as a lightweight shortcut to the demo flow:
+The main entrypoint is still the CLI. If you want sample scripts, they now live under `examples/`.
+
+The lightweight demo wrapper is:
 
 ```bash
-python run_minimal.py
+python examples/run_minimal.py
 ```
 
 You can also pass CLI arguments through it:
 
 ```bash
-python run_minimal.py demo --preset label
-python run_minimal.py run --query "What prescribing and safety information is available for metformin?"
+python examples/run_minimal.py demo --preset label
+python examples/run_minimal.py run --query "What prescribing and safety information is available for metformin?"
 ```
 
 ### 7. Run environment checks first
@@ -311,17 +314,17 @@ Code Agent
 ## Repository Layout
 
 ```text
+README.md / README_CN.md
+  GitHub-facing entry docs
+
+examples/
+  Optional runnable examples and compatibility wrappers
+
+scripts/legacy/
+  Historical maintainer helpers, not part of the public interface
+
 drugclaw/
-  config.py
-  main_system.py
-  llm_client.py
-  agent_retriever.py
-  agent_coder.py
-  agent_graph_builder.py
-  agent_reranker.py
-  agent_responder.py
-  agent_reflector.py
-  agent_websearch.py
+  Package runtime and CLI entrypoints
 
 skills/
   <subcategory>/<skill_name>/
@@ -330,9 +333,17 @@ skills/
     SKILL.md
     README.md
 
+skillexamples/
+  Resource-specific usage examples and operator notes
+
+tools/
+  Maintainer smoke checks and resource validation scripts
+
 resources_metadata/
   local data files
 ```
+
+For a short contributor-facing directory guide, see `docs/repository-guide.md`.
 
 ## Differentiation
 

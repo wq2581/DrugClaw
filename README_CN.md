@@ -37,10 +37,11 @@ DrugClaw 是一个围绕药物任务构建的多智能体 RAG 系统，专门处
 
 ## 快速开始
 
+以下命令默认都在你刚 clone 下来的仓库根目录执行。
+
 ### 1. 安装依赖
 
 ```bash
-cd /data/boom/Agent/DrugClaw
 pip install langgraph openai
 ```
 
@@ -132,19 +133,21 @@ drugclaw demo
 drugclaw run --query "What are the known drug targets of imatinib?"
 ```
 
-### 6. 兼容快捷方式：`run_minimal.py`
+### 6. 可选示例与兼容入口
 
-这个脚本现在等价于一个 demo 快捷入口：
+官方入口仍然是 CLI；如果你想看示例脚本或兼容包装器，现在统一放在 `examples/`。
+
+轻量 demo 包装脚本现在是：
 
 ```bash
-python run_minimal.py
+python examples/run_minimal.py
 ```
 
 也可以把参数原样透传给 CLI：
 
 ```bash
-python run_minimal.py demo --preset label
-python run_minimal.py run --query "What prescribing and safety information is available for metformin?"
+python examples/run_minimal.py demo --preset label
+python examples/run_minimal.py run --query "What prescribing and safety information is available for metformin?"
 ```
 
 ### 7. 先做环境自检
@@ -311,17 +314,17 @@ Code Agent
 ## 仓库结构
 
 ```text
+README.md / README_CN.md
+  面向 GitHub 新用户的入口文档
+
+examples/
+  可选运行示例与兼容包装脚本
+
+scripts/legacy/
+  历史维护脚本，不属于公开接口
+
 drugclaw/
-  config.py
-  main_system.py
-  llm_client.py
-  agent_retriever.py
-  agent_coder.py
-  agent_graph_builder.py
-  agent_reranker.py
-  agent_responder.py
-  agent_reflector.py
-  agent_websearch.py
+  运行时包与 CLI 主入口
 
 skills/
   <subcategory>/<skill_name>/
@@ -330,9 +333,17 @@ skills/
     SKILL.md
     README.md
 
+skillexamples/
+  面向单个资源的示例与操作说明
+
+tools/
+  维护者使用的 smoke check 与资源校验脚本
+
 resources_metadata/
   本地数据文件
 ```
+
+如果你想看更面向贡献者的目录说明，可以继续读 `docs/repository-guide.md`。
 
 ## 差异化优势
 
