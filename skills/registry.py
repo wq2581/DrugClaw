@@ -93,6 +93,14 @@ class SkillRegistry:
     def get_skill(self, name: str) -> Optional[RAGSkill]:
         return self._skills.get(name)
 
+    def get_registered_skills(self) -> List[RAGSkill]:
+        """Return all registered skill instances."""
+        return list(self._skills.values())
+
+    def get_planner_profiles(self) -> List[Dict[str, Any]]:
+        """Return planner-oriented metadata for all registered skills."""
+        return [skill.planner_profile() for skill in self._skills.values()]
+
     @property
     def kg_database_descriptions(self) -> str:
         """Multi-line string for LLM prompts, grouped by subcategory."""

@@ -42,6 +42,7 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -224,6 +225,80 @@ class RAGSkill(ABC):
             f"{self.name} [{self.subcategory}] — aim: {self.aim} — "
             f"covers: {self.data_range}"
         )
+
+    def planner_local_data_ready(self) -> Optional[bool]:
+        """
+        Best-effort readiness heuristic for LOCAL_FILE / DATASET skills.
+
+        Returns:
+          True  -> local data path is explicitly configured and exists
+          False -> local/data path keys exist but target files are missing
+          None  -> readiness cannot be inferred from config alone
+        """
+        if self.access_mode not in (AccessMode.LOCAL_FILE, AccessMode.DATASET):
+            return True
+
+        candidate_paths: List[str] = []
+        candidate_dirs: List[str] = []
+        for key, value in self.config.items():
+            if not isinstance(value, str) or not value.strip():
+                continue
+            key_lower = key.lower()
+            if key_lower.endswith(("_path", "_csv", "_tsv", "_json", "_xml", "_graphml")):
+                candidate_paths.append(value)
+            elif key_lower.endswith(("_dir", "_folder")):
+                candidate_dirs.append(value)
+
+        if candidate_paths or candidate_dirs:
+            for raw in candidate_paths:
+                if Path(raw).expanduser().exists():
+                    return True
+            for raw in candidate_dirs:
+                p = Path(raw).expanduser()
+                if p.exists() and p.is_dir():
+                    return True
+            return False
+
+        return None
+
+    def planner_profile(self) -> Dict[str, Any]:
+        """Compact planning metadata consumed by the constrained retriever."""
+        local_ready = self.planner_local_data_ready()
+        evidence_type = {
+            "KG": "knowledge_graph",
+            "Database": "curated_database",
+            "Dataset": "dataset",
+            "API": "api",
+            "WebSearch": "web_search",
+        }.get(self.resource_type, self.resource_type.lower())
+
+        tags = {
+            self.subcategory,
+            self.resource_type.lower(),
+            self.access_mode.lower(),
+        }
+        if self.access_mode == AccessMode.LOCAL_FILE:
+            tags.add("offline_ready" if local_ready else "offline_needed")
+        if self.access_mode == AccessMode.DATASET:
+            tags.add("benchmark_dataset")
+        if self.access_mode == AccessMode.CLI:
+            tags.add("cli_preferred")
+        if self.access_mode == AccessMode.REST_API:
+            tags.add("live_api")
+
+        return {
+            "name": self.name,
+            "subcategory": self.subcategory,
+            "resource_type": self.resource_type,
+            "access_mode": self.access_mode,
+            "aim": self.aim,
+            "data_range": self.data_range,
+            "available": bool(self.is_available()),
+            "implemented": bool(self._implemented),
+            "local_data_ready": local_ready,
+            "evidence_type": evidence_type,
+            "tags": sorted(tags),
+        }
 
     # ---- helpers ----------------------------------------------------------
 

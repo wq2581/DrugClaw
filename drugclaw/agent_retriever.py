@@ -1,15 +1,15 @@
 """
-Retriever Agent — selects skills and delegates querying to the Code Agent.
+Retriever Agent — constrained retrieval planning + delegation to the Code Agent.
 
-The Retriever Agent is now focused on:
-  1. Analyzing the query and selecting the best skills (via LLM or resource_filter)
-  2. Extracting key entities from the query
-  3. Delegating actual querying to the Code Agent
-  4. Collecting results as free-form text (no forced RetrievalResult schema)
-
-The old _build_subgraph() is replaced by the Graph Build Agent (graph mode)
-or results go directly as text to the Responder Agent (simple mode).
+This version adds a planning layer before the LLM selection step:
+  1. classify the query into a task family
+  2. rank candidate skills using hard signals
+     (availability, task fit, local-data readiness, access mode, historical usage)
+  3. let the LLM choose only from the top-k candidates
+  4. delegate actual querying to the Code Agent
 """
+from pathlib import Path
+import pickle
 from typing import List, Dict, Any, Optional
 
 from .models import AgentState
@@ -35,6 +35,7 @@ class RetrieverAgent:
         self.llm = llm_client
         self.skill_registry = skill_registry
         self.coder = coder_agent or CoderAgent(llm_client, skill_registry)
+        self._history_skill_scores = self._load_historical_skill_scores()
 
     # ------------------------------------------------------------------
     # Prompt builders
@@ -96,25 +97,36 @@ Respond with a structured plan for retrieval."""
         query: str,
         omics_constraints: str,
         iteration: int,
-        suggested_skills: List[str],
+        task_plan: Dict[str, Any],
+        candidate_skills: List[Dict[str, Any]],
     ) -> str:
-        suggestion_str = (
-            "Suggested skills (keyword-matched to your query, all ✓):\n  " +
-            ", ".join(suggested_skills)
-            if suggested_skills
-            else "No keyword-matched suggestions — use the tree in the system prompt."
-        )
+        candidate_lines = "\n".join(
+            (
+                f"- {item['name']} | score={item['score']:.2f} | "
+                f"subcategory={item['subcategory']} | access={item['access_mode']} | "
+                f"evidence={item['evidence_type']} | local_ready={item['local_data_ready']} | "
+                f"why={item['reason']}"
+            )
+            for item in candidate_skills
+        ) or "- No ranked candidates available."
         return f"""Query: {query}
 
 Biological Constraints:
 {omics_constraints}
 
-{suggestion_str}
+Task Classification:
+- primary_task: {task_plan["primary_task"]}
+- task_tags: {", ".join(task_plan["task_tags"]) or "none"}
+- rationale: {task_plan["reasoning"]}
+
+Top-ranked candidate skills (choose only from this list unless there is a compelling reason):
+{candidate_lines}
 
 Current Iteration: {iteration}
 
-Use the Skill Tree in the system prompt to navigate to the right domain, then
-select the best ✓-marked skills for this query.
+Use the Skill Tree in the system prompt, but constrain your final skill choice to
+the ranked candidates above. Prefer the highest-ranked candidates unless the query
+clearly needs broader coverage or cross-category evidence.
 
 Provide your plan in JSON format:
 {{
@@ -133,7 +145,7 @@ Provide your plan in JSON format:
         "other": []
     }},
     "selected_skills": ["ChEMBL", "DGIdb"],
-    "reasoning": "Explanation of which skill-tree domain you used and why these skills were selected"
+    "reasoning": "Explain how the task family and ranked candidates shaped the final selection"
 }}"""
 
     # ------------------------------------------------------------------
@@ -176,6 +188,7 @@ Provide your plan in JSON format:
                 if step.get("database")
             ]
 
+        print(f"[Retriever Agent] Task family: {query_plan.get('task_plan', {}).get('primary_task', 'unknown')}")
         print(f"[Retriever Agent] Selected skills: {selected_skills}")
         print(f"[Retriever Agent] Key entities: {key_entities}")
 
@@ -200,6 +213,8 @@ Provide your plan in JSON format:
         # Build a combined context string with query + entities + results
         context_parts = [
             f"Query: {state.original_query}",
+            f"Task Plan: {query_plan.get('task_plan', {})}",
+            f"Candidate Skills: {query_plan.get('candidate_skills', [])}",
             f"Key Entities: {key_entities}",
             f"Skills Used: {selected_skills}",
             "",
@@ -257,22 +272,34 @@ Provide your plan in JSON format:
     def _get_query_plan(
         self, query: str, omics_str: str, iteration: int,
     ) -> Dict[str, Any]:
-        """Use LLM to select skills and extract entities."""
-        suggested = self.skill_registry.get_skills_for_query(query)
+        """Classify the task, rank candidate skills, then let the LLM select from top-k."""
+        task_plan = self._classify_task(query, omics_str)
+        candidates = self._rank_candidate_skills(query, task_plan)
+        top_k = candidates[:6]
 
         messages = [
             {"role": "system", "content": self.get_system_prompt()},
             {"role": "user", "content": self.get_query_planning_prompt(
-                query, omics_str, iteration, suggested_skills=suggested,
+                query, omics_str, iteration, task_plan=task_plan, candidate_skills=top_k,
             )},
         ]
         try:
-            return self.llm.generate_json(messages)
+            plan = self.llm.generate_json(messages)
+            plan["task_plan"] = task_plan
+            plan["candidate_skills"] = top_k
+            plan["selected_skills"] = self._filter_selected_skills(
+                plan.get("selected_skills", []), top_k,
+            )
+            if not plan["selected_skills"]:
+                plan["selected_skills"] = [item["name"] for item in top_k[:3]]
+            return plan
         except Exception as e:
             print(f"[Retriever Agent] Error generating plan: {e}")
             return {
                 "key_entities": {"drugs": [], "genes": [], "diseases": [], "pathways": []},
-                "selected_skills": suggested[:3],
+                "task_plan": task_plan,
+                "candidate_skills": top_k,
+                "selected_skills": [item["name"] for item in top_k[:3]],
                 "reasoning": "Fallback plan due to LLM error",
             }
 
@@ -300,9 +327,178 @@ Respond in JSON:
 
         return {
             "key_entities": entities,
+            "task_plan": {
+                "primary_task": "resource_filter",
+                "task_tags": [],
+                "reasoning": "resource_filter bypassed automatic planning",
+            },
+            "candidate_skills": [
+                {"name": name, "score": 1.0, "reason": "resource_filter", "subcategory": "", "access_mode": "", "evidence_type": "", "local_data_ready": None}
+                for name in resource_filter
+            ],
             "selected_skills": resource_filter,
             "reasoning": f"resource_filter active: using {resource_filter}",
         }
+
+    def _classify_task(self, query: str, omics_str: str) -> Dict[str, Any]:
+        q = f"{query}\n{omics_str}".lower()
+        task_rules = [
+            ("ddi", ["interaction", "interact", "polypharmacy", "coadmin", "co-administer"]),
+            ("adr", ["adverse", "side effect", "toxicity", "hepatotoxic", "safety", "dili"]),
+            ("drug_labeling", ["label", "prescribing", "boxed warning", "dosage", "dose", "contraindication"]),
+            ("pharmacogenomics", ["pgx", "pharmacogen", "genotype", "variant", "cpic", "metabolizer", "cyp2d6", "cyp2c19"]),
+            ("drug_repurposing", ["repurpos", "reposition", "new indication"]),
+            ("drug_mechanism", ["mechanism", "pathway", "moa", "signaling"]),
+            ("drug_ontology", ["atc", "rxnorm", "ontology", "classification", "ingredient", "synonym"]),
+            ("drug_review", ["review", "patient report", "experience", "effectiveness"]),
+            ("drug_molecular_property", ["ic50", "sensitivity", "cell line", "gdsc"]),
+            ("drug_disease", ["disease association", "semantic association"]),
+            ("dti", ["target", "bind", "binding", "bioactivity", "ki", "kd", "ec50", "inhibit"]),
+        ]
+
+        matched = []
+        for task, keywords in task_rules:
+            if any(keyword in q for keyword in keywords):
+                matched.append(task)
+
+        if len(set(matched)) >= 2:
+            primary = "multi_hop"
+        elif matched:
+            primary = matched[0]
+        else:
+            primary = "drug_knowledgebase"
+
+        return {
+            "primary_task": primary,
+            "task_tags": sorted(set(matched)),
+            "reasoning": (
+                "keyword-driven task classification"
+                if matched else
+                "fallback to drug_knowledgebase due to weak task cues"
+            ),
+        }
+
+    def _rank_candidate_skills(self, query: str, task_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+        keyword_suggestions = set(self.skill_registry.get_skills_for_query(query))
+        primary_task = task_plan.get("primary_task", "drug_knowledgebase")
+        task_tags = set(task_plan.get("task_tags", []))
+
+        ranked = []
+        for profile in self.skill_registry.get_planner_profiles():
+            score = 0.0
+            reasons = []
+
+            if not profile["available"]:
+                continue
+
+            score += 4.0
+            reasons.append("available")
+
+            if profile["subcategory"] == primary_task:
+                score += 3.0
+                reasons.append("primary task fit")
+            elif profile["subcategory"] in task_tags:
+                score += 2.0
+                reasons.append("secondary task fit")
+            elif primary_task == "multi_hop":
+                score += 1.0
+                reasons.append("multi-hop coverage")
+
+            if profile["name"] in keyword_suggestions:
+                score += 1.5
+                reasons.append("keyword matched")
+
+            local_ready = profile.get("local_data_ready")
+            if local_ready is True:
+                score += 1.0
+                reasons.append("local data ready")
+            elif local_ready is False:
+                score -= 1.5
+                reasons.append("local data missing")
+
+            evidence_bonus = {
+                "curated_database": 1.0,
+                "knowledge_graph": 0.8,
+                "api": 0.7,
+                "dataset": 0.2,
+                "web_search": 0.3,
+            }
+            score += evidence_bonus.get(profile["evidence_type"], 0.0)
+
+            score += self._access_mode_score(profile["access_mode"])
+
+            historical = self._history_skill_scores.get(primary_task, {}).get(profile["name"], 0.0)
+            if historical:
+                score += min(historical, 2.0)
+                reasons.append(f"historical={historical:.2f}")
+
+            ranked.append({
+                **profile,
+                "score": score,
+                "reason": ", ".join(reasons[:4]) or "default",
+            })
+
+        ranked.sort(key=lambda item: (-item["score"], item["name"]))
+        return ranked
+
+    @staticmethod
+    def _access_mode_score(access_mode: str) -> float:
+        return {
+            "CLI": 0.9,
+            "REST_API": 0.8,
+            "LOCAL_FILE": 0.7,
+            "DATASET": 0.2,
+        }.get(access_mode, 0.0)
+
+    @staticmethod
+    def _filter_selected_skills(selected: List[str], candidates: List[Dict[str, Any]]) -> List[str]:
+        allowed = {item["name"] for item in candidates}
+        if isinstance(selected, str):
+            selected = [selected]
+        return [name for name in selected if name in allowed]
+
+    def _load_historical_skill_scores(self) -> Dict[str, Dict[str, float]]:
+        """
+        Infer lightweight skill priors from logged successful runs.
+
+        We do not yet log explicit selected_skills, so this uses the source field
+        from retrieved_content in detailed query logs as a proxy.
+        """
+        log_dir = Path("query_logs") / "detailed_logs"
+        if not log_dir.exists():
+            return {}
+
+        scores: Dict[str, Dict[str, float]] = {}
+        files = sorted(log_dir.glob("*.pkl"))[-200:]
+        for path in files:
+            try:
+                with open(path, "rb") as fh:
+                    payload = pickle.load(fh)
+            except Exception:
+                continue
+
+            result = payload.get("full_result", {})
+            if not result.get("success"):
+                continue
+
+            task = self._classify_task(payload.get("query", ""), "")["primary_task"]
+            task_scores = scores.setdefault(task, {})
+            reward = float(result.get("final_reward", 0.5) or 0.5)
+            for item in result.get("retrieved_content", []):
+                source = item.get("source")
+                if source:
+                    task_scores[source] = task_scores.get(source, 0.0) + reward
+
+        normalized: Dict[str, Dict[str, float]] = {}
+        for task, task_scores in scores.items():
+            if not task_scores:
+                continue
+            max_score = max(task_scores.values()) or 1.0
+            normalized[task] = {
+                skill: round(score / max_score, 3)
+                for skill, score in task_scores.items()
+            }
+        return normalized
 
     @staticmethod
     def _text_to_retrieved_content(

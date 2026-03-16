@@ -11,8 +11,9 @@ to be queried in its own natural way.
 """
 from __future__ import annotations
 
+import ast
 import io
-import sys
+import signal
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Dict, List, Optional
@@ -126,27 +127,29 @@ Return ONLY Python code."""
         per_skill: Dict[str, Dict[str, str]] = {}
 
         for skill_name in skill_names:
-            print(f"[Code Agent] Generating code for skill: {skill_name}")
+            print(f"[Code Agent] Querying skill: {skill_name}")
 
-            # Try the code-generation path first
-            skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
-            code, output, error = self._generate_and_run_for_skill(
-                skill_name, skill_info, entities, query,
+            code, output, error = self._structured_template_retrieve(
+                skill_name, entities, query, max_results_per_skill,
             )
+            execution_mode = "template"
 
-            if error and not output.strip():
-                # Code-gen path failed — fallback to direct skill.retrieve()
-                print(f"[Code Agent] Code execution failed for {skill_name}, "
-                      f"falling back to skill.retrieve()")
-                output, error = self._fallback_retrieve(
-                    skill_name, entities, query, max_results_per_skill,
+            if error or not output.strip():
+                print(
+                    f"[Code Agent] Template path produced insufficient output for {skill_name}; "
+                    f"falling back to generated code"
                 )
-                code = "(fallback: skill.retrieve())"
+                skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
+                code, output, error = self._generate_and_run_for_skill(
+                    skill_name, skill_info, entities, query,
+                )
+                execution_mode = "codegen"
 
             per_skill[skill_name] = {
                 "code": code,
                 "output": output,
                 "error": error,
+                "mode": execution_mode,
             }
 
             if output.strip():
@@ -188,28 +191,31 @@ Return ONLY Python code."""
         # Clean up the code (remove markdown fences if any)
         code = self._clean_code(code)
 
-        # Execute the code
+        validation_error = self._validate_generated_code(code)
+        if validation_error:
+            return code, "", validation_error
+
         output, error = self._execute_code(code, timeout_seconds=30)
         return code, output, error
 
-    def _fallback_retrieve(
+    def _structured_template_retrieve(
         self,
         skill_name: str,
         entities: Dict[str, List[str]],
         query: str,
         max_results: int,
     ) -> tuple:
-        """Fallback: use the skill's retrieve() method directly."""
+        """Template-first path: use the skill's unified retrieve() contract."""
         skill = self.skill_registry.get_skill(skill_name)
         if skill is None:
-            return "", f"Skill '{skill_name}' not registered"
+            return "(template: unavailable)", "", f"Skill '{skill_name}' not registered"
 
         try:
             results = skill.retrieve(
                 entities=entities, query=query, max_results=max_results,
             )
             if not results:
-                return "(no results)", ""
+                return "(template: no results)", "", ""
 
             lines = []
             for r in results[:max_results]:
@@ -222,10 +228,18 @@ Return ONLY Python code."""
                     line += f"\n  Evidence: {r.evidence_text}"
                 if r.sources:
                     line += f"\n  Sources: {', '.join(r.sources[:3])}"
+                if r.metadata:
+                    meta_items = [
+                        f"{k}={v}"
+                        for k, v in list(r.metadata.items())[:4]
+                        if v not in ("", None, [], {})
+                    ]
+                    if meta_items:
+                        line += f"\n  Metadata: {', '.join(meta_items)}"
                 lines.append(line)
-            return "\n".join(lines), ""
+            return "(template: skill.retrieve())", "\n".join(lines), ""
         except Exception as exc:
-            return "", f"retrieve() error: {exc}"
+            return "(template: error)", "", f"retrieve() error: {exc}"
 
     # ------------------------------------------------------------------
     # Code execution
@@ -240,19 +254,31 @@ Return ONLY Python code."""
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
 
-        # Build a restricted namespace with common imports available
+        # Build a restricted namespace with constrained imports.
         exec_globals = {
-            "__builtins__": __builtins__,
+            "__builtins__": self._safe_builtins(),
             "__name__": "__coder_agent__",
         }
 
+        def _timeout_handler(signum, frame):
+            raise TimeoutError(f"generated code exceeded {timeout_seconds}s")
+
+        previous_handler = signal.getsignal(signal.SIGALRM) if hasattr(signal, "SIGALRM") else None
+
         try:
+            previous_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(timeout_seconds)
             with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
                 exec(code, exec_globals)
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous_handler)
             output = stdout_capture.getvalue()
             errors = stderr_capture.getvalue()
             return output, errors
         except Exception as exc:
+            signal.alarm(0)
+            if previous_handler is not None:
+                signal.signal(signal.SIGALRM, previous_handler)
             output = stdout_capture.getvalue()
             error_msg = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
             return output, error_msg
@@ -272,3 +298,69 @@ Return ONLY Python code."""
         if code.endswith("```"):
             code = code[:-3]
         return code.strip()
+
+    @staticmethod
+    def _validate_generated_code(code: str) -> str:
+        """Static guardrail before executing generated code."""
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            return f"generated code is not valid Python: {exc}"
+
+        forbidden_modules = {
+            "subprocess", "socket", "ctypes", "multiprocessing",
+            "pty", "resource", "shlex",
+        }
+        forbidden_names = {"eval", "exec", "compile", "input", "__import__"}
+        forbidden_attrs = {"system", "popen", "fork", "remove", "unlink", "rmdir"}
+        saw_print = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    root = alias.name.split(".")[0]
+                    if root in forbidden_modules:
+                        return f"forbidden import in generated code: {root}"
+            elif isinstance(node, ast.ImportFrom):
+                module = (node.module or "").split(".")[0]
+                if module in forbidden_modules:
+                    return f"forbidden import in generated code: {module}"
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in forbidden_names:
+                        return f"forbidden call in generated code: {node.func.id}"
+                    if node.func.id == "print":
+                        saw_print = True
+                elif isinstance(node.func, ast.Attribute):
+                    if node.func.attr in forbidden_attrs:
+                        return f"forbidden attribute call in generated code: {node.func.attr}"
+
+        if not saw_print:
+            return "generated code must print retrieval output"
+        return ""
+
+    @staticmethod
+    def _safe_builtins() -> Dict[str, Any]:
+        allowed_import_roots = {
+            "collections", "csv", "drugclaw", "importlib", "io", "itertools",
+            "json", "math", "os", "pathlib", "re", "skills", "statistics",
+            "sys", "time", "typing", "urllib", "xml",
+        }
+
+        builtin_map = dict(__builtins__ if isinstance(__builtins__, dict) else __builtins__.__dict__)
+
+        def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+            root = name.split(".")[0]
+            if root not in allowed_import_roots:
+                raise ImportError(f"Import of '{name}' is not allowed in generated code")
+            return __import__(name, globals, locals, fromlist, level)
+
+        allowed_names = {
+            "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+            "len", "range", "min", "max", "sum", "sorted", "set", "list", "dict",
+            "tuple", "str", "int", "float", "bool", "enumerate", "zip", "any",
+            "all", "abs", "print", "open",
+        }
+        safe = {name: builtin_map[name] for name in allowed_names}
+        safe["__import__"] = _safe_import
+        return safe
