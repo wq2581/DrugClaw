@@ -16,10 +16,10 @@ import csv
 import shutil
 from pathlib import Path
 
-OUTPUT_DIR = "DTC"
+OUTPUT_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "dti" / "DTC")
 # Direct CSV download
 CSV_URL = "https://drugtargetcommons.fimm.fi/static/Excell_files/DTC_data.csv"
-LOCAL_FALLBACK = Path(__file__).resolve().parents[1] / "DTC" / "DTC_data.csv"
+LOCAL_FALLBACK = Path(__file__).resolve().parents[1] / "resources_metadata" / "dti" / "DTC" / "DTC_data.csv"
 
 
 def download_dtc():

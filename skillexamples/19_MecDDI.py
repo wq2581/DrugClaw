@@ -16,8 +16,9 @@ import os
 import csv
 import json
 from typing import List, Dict, Optional, Union
+from pathlib import Path
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/ddi/MecDDI"
+DATA_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "ddi" / "MecDDI")
 
 
 def load_mecddi(data_dir: str = DATA_DIR) -> List[Dict]:

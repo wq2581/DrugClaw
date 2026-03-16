@@ -18,8 +18,9 @@ Usage:
 import os, glob
 import networkx as nx
 from typing import Union, Optional
+from pathlib import Path
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/drug_knowledgebase/UniD3"
+DATA_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "drug_knowledgebase" / "UniD3")
 
 # ── Internals ────────────────────────────────────────────────────────────────
 

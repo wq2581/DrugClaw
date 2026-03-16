@@ -4,6 +4,7 @@ build/
 drugclaw.egg-info/
 query_logs/
 resources_metadata/**
+# Only commit curated minimal fixtures needed by examples/tests.
 !resources_metadata/drug_combination/
 !resources_metadata/drug_combination/CDCDB/
 !resources_metadata/drug_combination/CDCDB/cdcdb.csv
@@ -73,5 +74,7 @@ resources_metadata/**
 !resources_metadata/dti/
 !resources_metadata/dti/GDKD/
 !resources_metadata/dti/GDKD/gdkd.csv
+!resources_metadata/dti/DTC/
+!resources_metadata/dti/DTC/DTC_data.csv
 !resources_metadata/dti/TarKG/
 !resources_metadata/dti/TarKG/tarkg.tsv

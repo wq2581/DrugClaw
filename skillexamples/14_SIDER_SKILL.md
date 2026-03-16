@@ -59,7 +59,7 @@ for entity, r in results.items():
 ## Data Files
 
 All pre-downloaded and extracted under:  
-`/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/adr/SIDER`
+`resources_metadata/adr/SIDER`
 
 | File | Content |
 |---|---|

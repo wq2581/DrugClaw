@@ -41,6 +41,7 @@ Keep network timeouts short and preserve the script's native access method
 
 - Review `if __name__ == "__main__"` in `65_FDA_Orange_Book.py` first when generating runnable query code.
 - Primary link from the example: <https://www.accessdata.fda.gov/scripts/cder/ob/>
+- The repository does not keep monthly Orange Book snapshots under version control; on network failure the example writes a tiny built-in offline fixture for smoke testing.
 - Inspect the validation script directly for its current assertions and sample entities.
 
 ## Data Source

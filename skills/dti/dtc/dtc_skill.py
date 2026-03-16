@@ -44,6 +44,8 @@ class DTCSkill(RAGSkill):
         if not path:
             fallback = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                "resources_metadata",
+                "dti",
                 "DTC",
                 "DTC_data.csv",
             )

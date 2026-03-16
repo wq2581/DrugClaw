@@ -15,11 +15,12 @@ import json
 import os
 import re
 from typing import List, Dict, Optional, Union
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Data path
 # ---------------------------------------------------------------------------
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/ddi/DDInter"
+DATA_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "ddi" / "DDInter")
 
 # ---------------------------------------------------------------------------
 # In-memory cache (lazy-loaded once)

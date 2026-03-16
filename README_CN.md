@@ -83,6 +83,7 @@ cp navigator_api_keys.example.json navigator_api_keys.json
 - 先用当前仓库里已经存在的 `resources_metadata/...`
 - 如果本地缺失，优先从维护好的镜像仓库同步
 - 只有镜像也没有时，再回到原始官网或数据下载页手动获取
+- 不要把私有凭证、本地快照或临时下载文件提交到 `resources_metadata/`；版本库里只保留测试所需的最小 fixture
 
 当前维护的镜像仓库：
 

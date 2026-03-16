@@ -83,6 +83,7 @@ Recommended resolution order:
 - Use files already present under `resources_metadata/...`
 - If missing, sync from the maintained mirror first
 - Only fall back to the original source site if the mirror does not contain the data
+- Do not commit private credentials, local snapshots, or temporary downloads under `resources_metadata/`; only keep curated minimal fixtures that are required for tests
 
 Maintained mirror:
 

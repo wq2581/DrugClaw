@@ -18,8 +18,9 @@ import os
 import json
 from collections import defaultdict
 from typing import Union
+from pathlib import Path
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/dti/TTD"
+DATA_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "dti" / "TTD")
 
 
 # ── Parsers ──────────────────────────────────────────────────────────────────

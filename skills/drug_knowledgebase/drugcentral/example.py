@@ -21,11 +21,12 @@ import gzip
 import json
 import re
 from typing import Union
+from pathlib import Path
 
 # ── Config ──────────────────────────────────────────────────────────────
 DATA_DIR = os.environ.get(
     "DRUGCENTRAL_DIR",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugCentral",
+    str(Path(__file__).resolve().parents[3] / "resources_metadata" / "drug_knowledgebase" / "DrugCentral"),
 )
 
 STRUCTURES_FILE = os.path.join(DATA_DIR, "structures.smiles.tsv")
