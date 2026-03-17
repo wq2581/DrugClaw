@@ -1,54 +1,81 @@
----
-name: ade-corpus-query
-description: >
-  Query or inspect the ADE Corpus - Adverse Drug Event Extraction Benchmark resource for drug-centric tasks with emphasis on drug nlp/text mining Use whenever Codex needs the calling pattern, downloadable entrypoint, or example query flow from this skill example script.
----
+# 32_ADE_Corpus
 
-# ADE Corpus - Adverse Drug Event Extraction Benchmark
+## Overview
 
-Use this file as the compact operator guide for the paired `skillexamples` script.
-Prefer reading the Python example itself for exact request parameters, field names,
-and response handling.
+**ADE Corpus V2** — Adverse Drug Event relation extraction dataset from annotated PubMed case reports.
 
-## Paired Example
+| Field | Value |
+|-------|-------|
+| Category | Drug-centric |
+| Subcategory | Drug NLP / Text Mining |
+| Source | [GitHub](https://github.com/trunghlt/AdverseDrugReaction/tree/master/ADE-Corpus-V2) |
+| Paper | [ACL 2016](https://aclanthology.org/C16-1084/) |
+| Local Path | `/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/drug_nlp/ADECorpus/ADE-Corpus-V2` |
 
-- Script: `32_ADE_Corpus.py`
-- Category: `Drug-centric`
-- Type: `Dataset`
-- Subcategory: `Drug NLP/Text Mining`
+## Data Files
 
-## API Surface
+| File | Content |
+|------|---------|
+| `DRUG-AE.rel` | Drug ↔ Adverse Event relation pairs with source sentences |
+| `DRUG-DOSE.rel` | Drug ↔ Dose relation pairs with source sentences |
+| `ADE-NEG.txt` | Negative examples (sentences without adverse events) |
 
-| Function | Purpose |
-|---|---|
-| `download_ade_corpus()` | See `32_ADE_Corpus.py` for exact input/output behavior. |
-| `load_ade_dataset()` | See `32_ADE_Corpus.py` for exact input/output behavior. |
+## Quick Start
 
-## Usage
+```python
+from 32_ADE_Corpus import ADECorpus  # or rename to ade_corpus
 
-Read `32_ADE_Corpus.py` and copy its call pattern when writing Code Agent query code.
-Keep network timeouts short and preserve the script's native access method
-(REST, direct download, local file scan, or HTML scraping).
+corpus = ADECorpus()
 
-## Validation
+# Single entity
+print(corpus.query("aspirin"))
 
-- Validation script: `tools/test_skill_32_ade_corpus.py`
-- Run: `python tools/test_skill_32_ade_corpus.py`
-- Runtime import: `from skills.drug_nlp.ade_corpus import ADECorpusSkill`
+# Multiple entities
+print(corpus.query(["lithium", "hepatotoxicity"]))
+
+# Corpus statistics
+print(corpus.stats())
+```
+
+## Query Input / Output
+
+### Input
+
+`corpus.query(entities)` — accepts `str` or `list[str]`.  
+Each entity is matched case-insensitively against both drug names and adverse event names.
+
+### Output (JSON)
+
+```json
+{
+  "aspirin": {
+    "entity": "aspirin",
+    "matched_as_drug": true,
+    "matched_as_adverse_event": false,
+    "total_mentions": 42,
+    "adverse_events": ["bleeding", "tinnitus", "..."],
+    "doses": ["100mg", "..."],
+    "related_drugs": null,
+    "pubmed_ids": ["12345678", "..."],
+    "sample_sentences": ["A 65-year-old patient developed ..."]
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `matched_as_drug` | Entity found as a drug name |
+| `matched_as_adverse_event` | Entity found as an adverse event name |
+| `total_mentions` | Total matching records |
+| `adverse_events` | List of associated adverse events (when matched as drug) |
+| `doses` | List of associated doses (when matched as drug) |
+| `related_drugs` | List of drugs causing this event (when matched as AE) |
+| `pubmed_ids` | Up to 10 source PubMed IDs |
+| `sample_sentences` | Up to 3 example sentences |
 
 ## Notes
 
-- Review `if __name__ == "__main__"` in `32_ADE_Corpus.py` first when generating runnable query code.
-- Primary link from the example: <https://github.com/trunghlt/AdverseDrugReaction>
-- Reference paper from the example: <https://aclanthology.org/C16-1084/>
-- The validation script currently checks:
-- import ADECorpusSkill
-- call is_available()
-- standard query: drug=aspirin
-- edge query: drug=zzz_not_a_real_drug_zzz
-- validate evidence_text and metadata
-
-## Data Source
-
-- <https://github.com/trunghlt/AdverseDrugReaction>
-- <https://aclanthology.org/C16-1084/>
+- All matching is **case-insensitive**.
+- `query()` returns a **JSON string** directly consumable by LLMs.
+- `stats()` returns corpus-level counts (total relations, unique drugs/AEs).
+- No external dependencies — stdlib only (`os`, `json`, `collections`).

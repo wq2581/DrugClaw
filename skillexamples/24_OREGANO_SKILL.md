@@ -1,54 +1,52 @@
 ---
 name: oregano-query
 description: >
-  Query or inspect the OREGANO - Drug Repurposing Knowledge Graph resource for drug-centric tasks with emphasis on drug repurposing Use whenever Codex needs the calling pattern, downloadable entrypoint, or example query flow from this skill example script.
+  Query the OREGANO knowledge graph for computational drug repurposing.
+  Use whenever the user asks about drug–target–disease–gene–pathway
+  relationships, compound cross-references, drug repurposing hypotheses,
+  or wants to explore neighbors of any biomedical entity in a knowledge
+  graph that includes natural compounds.
 ---
 
-# OREGANO - Drug Repurposing Knowledge Graph
+# OREGANO Query Skill
 
-Use this file as the compact operator guide for the paired `skillexamples` script.
-Prefer reading the Python example itself for exact request parameters, field names,
-and response handling.
+Search the OREGANO knowledge graph (88,937 nodes, 824,231 links) by any entity. Auto-resolves input to OREGANO node IDs via cross-reference tables.
 
-## Paired Example
+| Input Pattern | Detected As | Match Logic |
+|---|---|---|
+| OREGANO internal ID (e.g. `1234`) | OREGANO node ID | exact in triplet index |
+| `DB00331` / DrugBank ID | external xref | exact in COMPOUND.tsv |
+| UniProt / KEGG / MeSH / UMLS ID | external xref | exact across all metadata TSVs |
+| `metformin`, `BRCA1`, free text | entity name | substring on name columns |
 
-- Script: `24_OREGANO.py`
-- Category: `Drug-centric`
-- Type: `DB`
-- Subcategory: `Drug Repurposing`
+## API
 
-## API Surface
+| Function | Input | Returns |
+|---|---|---|
+| `search(query)` | single entity string | dict: `{query, resolved_ids, metadata, triplets}` |
+| `search_batch(queries)` | list of entity strings | `dict[str, search_result]` |
+| `summarize(result)` | search result dict | compact LLM-readable text |
+| `to_json(result)` | search result dict | JSON-serializable dict |
+| `get_stats()` | — | graph-level counts (triplets, nodes, predicates, entity types) |
 
-| Function | Purpose |
-|---|---|
-| `download_oregano()` | See `24_OREGANO.py` for exact input/output behavior. |
-| `list_contents()` | See `24_OREGANO.py` for exact input/output behavior. |
+## Graph Schema
+
+**11 node types**: Compound (90,868), Gene (35,794), Target (22,096), Disease (18,333), Phenotype (11,605), Side Effect (6,060), Indication (2,714), Pathway (2,129), Effect (171), Activity (78).
+
+**19 relation types** (predicates): e.g. `has_target`, `has_indication`, `has_side_effect`, `interacts_with`, `involved_in_pathway`, `associated_with`, `has_phenotype`, etc. Run `get_stats()` to list all predicates with counts.
 
 ## Usage
 
-Read `24_OREGANO.py` and copy its call pattern when writing Code Agent query code.
-Keep network timeouts short and preserve the script's native access method
-(REST, direct download, local file scan, or HTML scraping).
+See `if __name__ == "__main__"` block in `21_OREGANO.py` for runnable examples covering: free-text drug name search, DrugBank ID lookup, batch search, JSON pipeline output, and graph statistics.
 
-## Validation
+## Data
 
-- Validation script: `tools/test_skill_24_oregano.py`
-- Run: `python tools/test_skill_24_oregano.py`
-- Runtime import: `from skills.drug_repurposing.oregano import OREGANOSkill`
+- **Source**: Zenodo DOI 10.5281/zenodo.10103842 (CC-BY 4.0)
+- **Version**: v2.1 (published 2023-11-10)
+- **Core file**: `OREGANO_V2.1.tsv` — tab-delimited triplets (Subject, Predicate, Object)
+- **Metadata files**: `COMPOUND.tsv`, `TARGET.tsv`, `GENES.tsv`, `DISEASES.tsv`, `PHENOTYPES.tsv`, `PATHWAYS.tsv`, `INDICATION.tsv`, `SIDE_EFFECT.tsv`, `ACTIVITY.tsv`, `EFFECT.tsv`
+- **Path**: `DATA_DIR` variable in `21_OREGANO.py`
 
-## Notes
+## Citation
 
-- Review `if __name__ == "__main__"` in `24_OREGANO.py` first when generating runnable query code.
-- Primary link from the example: <https://gitub.u-bordeaux.fr/erias/oregano>
-- Reference paper from the example: <https://www.nature.com/articles/s41597-023-02757-0>
-- The validation script currently checks:
-- import OREGANOSkill
-- call is_available()
-- standard query: drug=imatinib
-- edge query: drug=zzz_not_a_real_drug_zzz
-- validate evidence_text and metadata
-
-## Data Source
-
-- <https://gitub.u-bordeaux.fr/erias/oregano>
-- <https://www.nature.com/articles/s41597-023-02757-0>
+Boudin, M., Diallo, G., Drancé, M. & Mougin, F. The OREGANO knowledge graph for computational drug repurposing. *Sci Data* 10, 871 (2023). https://doi.org/10.1038/s41597-023-02757-0

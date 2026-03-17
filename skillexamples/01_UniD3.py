@@ -6,21 +6,13 @@ Source: https://github.com/QSong-github/UniD3
 Multi-KG from 150,000+ PubMed articles. 6 GraphML files covering
 drug-disease matching, effectiveness assessment, and drug-target analysis.
 
-Usage:
-    from UniD3 import query_entities, get_neighbors, search_by_type, search_by_keyword, list_graphs
-    query_entities("CALVES")
-    query_entities(["RESPIRATORY DISEASES", "CALVES"])
-    get_neighbors("CALVES", graph_names=["UniD3_L1T1"])
-    search_by_type("DISEASE", limit=10)
-    search_by_keyword("inflammation", limit=10)
 """
 
 import os, glob
 import networkx as nx
 from typing import Union, Optional
-from pathlib import Path
 
-DATA_DIR = str(Path(__file__).resolve().parents[1] / "resources_metadata" / "drug_knowledgebase" / "UniD3")
+DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/drug_knowledgebase/UniD3"
 
 # ── Internals ────────────────────────────────────────────────────────────────
 

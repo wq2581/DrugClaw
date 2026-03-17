@@ -1,11 +1,3 @@
----
-name: unid3-query
-description: >
-  Query the UniD3 drug discovery knowledge graph. Use whenever Codex needs
-  graph-local lookup patterns for drug, disease, gene, or neighbor traversal
-  against the six UniD3 GraphML resources.
----
-
 # UniD3 - Drug Discovery Knowledge Graph
 
 ## Overview
@@ -13,7 +5,7 @@ description: >
 UniD3 is a multi-knowledge-graph built from 150,000+ PubMed articles, stored as 6 GraphML files. It supports drug-disease matching, effectiveness assessment, and drug-target analysis.
 
 - **Source**: https://github.com/QSong-github/UniD3
-- **Local path**: `resources_metadata/drug_knowledgebase/UniD3`
+- **Local path**: `/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/drug_knowledgebase/UniD3`
 - **Format**: GraphML (6 files, e.g. `UniD3_L1T1.graphml`)
 - **Dependency**: `networkx`
 

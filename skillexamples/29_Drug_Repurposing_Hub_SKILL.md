@@ -1,55 +1,64 @@
 ---
-name: drug-repurposing-hub-query
+name: Drug-Repurposing-Hub
 description: >
-  Query or inspect the Drug Repurposing Hub - Curated Drug Repurposing Compound Collection resource for drug-centric tasks with emphasis on drug repurposing Use whenever Codex needs the calling pattern, downloadable entrypoint, or example query flow from this skill example script.
+  Query the Broad Institute Drug Repurposing Hub (~6,800 compounds).
+  Look up drugs by name, gene target, MOA, disease area, Broad ID,
+  or InChIKey.  Returns clinical phase, mechanism of action, targets,
+  disease area, indication, and chemical identifiers.
 ---
 
-# Drug Repurposing Hub - Curated Drug Repurposing Compound Collection
+# Drug Repurposing Hub Query Skill
 
-Use this file as the compact operator guide for the paired `skillexamples` script.
-Prefer reading the Python example itself for exact request parameters, field names,
-and response handling.
+Search the Broad Institute Drug Repurposing Hub by any entity.
+Auto-detects input type by pattern:
 
-## Paired Example
+| Input Pattern | Detected As | Match Logic |
+|---|---|---|
+| `BRD-A12345678` | Broad compound ID | prefix on `broad_id` |
+| `ABCDEFGHIJKLMN-OPQRSTUVWX-Y` | InChIKey | exact on `InChIKey` |
+| `EGFR`, `BRAF`, `TOP1` | Gene / target | exact token in `target` (pipe-separated) |
+| anything else | free text | substring on `pert_iname`, `moa`, `indication`, `disease_area` |
 
-- Script: `29_Drug_Repurposing_Hub.py`
-- Category: `Drug-centric`
-- Type: `DB`
-- Subcategory: `Drug Repurposing`
+## API
 
-## API Surface
-
-| Function | Purpose |
-|---|---|
-| `download_hub()` | See `29_Drug_Repurposing_Hub.py` for exact input/output behavior. |
-| `preview_drugs()` | See `29_Drug_Repurposing_Hub.py` for exact input/output behavior. |
+| Function | Input | Returns |
+|---|---|---|
+| `load_drugs(path)` | drug TSV path | list[dict] |
+| `load_samples(path)` | sample TSV path | list[dict] |
+| `load_merged()` | — | list[dict] (drugs + chemical IDs from samples) |
+| `search(entity)` | single entity string | list[dict] |
+| `search_batch(entities)` | list of entity strings | dict[str, list[dict]] |
+| `summarize(hits, entity)` | hits + label | compact LLM-readable text |
+| `to_json(hits)` | list[dict] | list[dict] (JSON-serialisable) |
 
 ## Usage
 
-Read `29_Drug_Repurposing_Hub.py` and copy its call pattern when writing Code Agent query code.
-Keep network timeouts short and preserve the script's native access method
-(REST, direct download, local file scan, or HTML scraping).
+See `if __name__ == "__main__"` block in `29_Drug_Repurposing_Hub.py` for
+runnable examples covering: drug name, gene target, MOA keyword, disease
+area, batch search, and JSON output.
 
-## Validation
+```python
+from importlib.machinery import SourceFileLoader
+hub = SourceFileLoader("hub", "29_Drug_Repurposing_Hub.py").load_module()
 
-- Validation script: `tools/test_skill_29_repurposing_hub.py`
-- Run: `python tools/test_skill_29_repurposing_hub.py`
-- Runtime import: `from skills.drug_repurposing.repurposing_hub import RepurposingHubSkill`
+# Single drug lookup
+hits = hub.search("imatinib")
+print(hub.summarize(hits, "imatinib"))
 
-## Notes
+# Target-based search
+hits = hub.search("EGFR")
 
-- Review `if __name__ == "__main__"` in `29_Drug_Repurposing_Hub.py` first when generating runnable query code.
-- Primary link from the example: <https://clue.io/repurposing>
-- Reference paper from the example: <https://www.nature.com/articles/nm.4306>
-- The validation script currently checks:
-- import RepurposingHubSkill
-- call is_available()
-- standard query: drug=imatinib
-- edge query: drug=zzz_not_a_real_drug_zzz
-- validate evidence_text and metadata
+# Batch
+results = hub.search_batch(["metformin", "aspirin", "BRAF"])
+```
 
-## Data Source
+## Data
 
-- <https://clue.io/repurposing>
-- <https://www.nature.com/articles/nm.4306>
-- <https://clue.io/repurposing-app>
+- **Source**: Broad Institute Drug Repurposing Hub (https://repo-hub.broadinstitute.org/repurposing)
+- **Drug file**: `repo-drug-annotation-20200324.txt` — tab-delimited, `!`-prefixed comment lines
+  - Columns: `pert_iname`, `clinical_phase`, `moa`, `target`, `disease_area`, `indication`
+- **Sample file**: `repo-sample-annotation-20240610.txt` — tab-delimited, `!`-prefixed comment lines
+  - Columns include: `broad_id`, `pert_iname`, `InChIKey`, `pubchem_cid`, `smiles`, `vendor`, `purity`, etc.
+- **Merge**: on `pert_iname`; first sample with non-empty `InChIKey` is kept per drug
+- **Path**: `DATA_DIR` variable in `29_Drug_Repurposing_Hub.py`
+- **Citation**: Corsello SM et al. *Nature Medicine* 23, 405–408 (2017). doi:10.1038/nm.4306

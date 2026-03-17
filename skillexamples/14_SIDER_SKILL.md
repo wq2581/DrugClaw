@@ -1,11 +1,3 @@
----
-name: sider-query
-description: >
-  Query local SIDER adverse drug reaction files. Use whenever Codex needs the
-  lookup pattern for drug names, STITCH IDs, UMLS CUIs, ATC codes, side
-  effects, or indication matching against SIDER flat files.
----
-
 # SIDER - Side Effect Resource
 
 **Category:** Drug-centric | **Type:** DB | **Subcategory:** Adverse Drug Reaction (ADR)  
@@ -59,7 +51,7 @@ for entity, r in results.items():
 ## Data Files
 
 All pre-downloaded and extracted under:  
-`resources_metadata/adr/SIDER`
+`/blue/qsong1/wang.qing/AgentLLM/Survey100/resources_metadata/adr/SIDER`
 
 | File | Content |
 |---|---|

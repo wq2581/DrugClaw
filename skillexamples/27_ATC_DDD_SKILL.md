@@ -1,48 +1,61 @@
 ---
-name: atc-ddd-query
+name: 27_ATC_DDD
 description: >
-  Query or inspect the ATC/DDD - WHO Anatomical Therapeutic Chemical Classification resource for drug-centric tasks with emphasis on drug ontology/terminology Use whenever Codex needs the calling pattern, downloadable entrypoint, or example query flow from this skill example script.
+  Query the WHO ATC/DDD Classification System. Use whenever the user asks about
+  ATC codes, drug classification hierarchy, Defined Daily Doses (DDD), or wants
+  to look up drugs by ATC class or find the ATC code for a drug name.
 ---
 
-# ATC/DDD - WHO Anatomical Therapeutic Chemical Classification
+# ATC/DDD Query Skill
 
-Use this file as the compact operator guide for the paired `skillexamples` script.
-Prefer reading the Python example itself for exact request parameters, field names,
-and response handling.
+Look up ATC classification and DDD data for drugs. Auto-detects entity type:
 
-## Paired Example
+| Input Pattern | Detected As | Query Path |
+|---|---|---|
+| `N02BA` `A10BA02` `C09XX01` | ATC code | local DDD lookup + RxNav member drugs |
+| `aspirin` `metformin` | drug name | RxNav ATC classification + local DDD match |
 
-- Script: `27_ATC_DDD.py`
-- Category: `Drug-centric`
-- Type: `DB`
-- Subcategory: `Drug Ontology/Terminology`
+ATC code regex: `^[A-Z]\d{2}([A-Z]{1,2}\d{0,2})?$`
 
-## API Surface
+## API
 
-| Function | Purpose |
-|---|---|
-| `get_atc_class_drugs()` | See `27_ATC_DDD.py` for exact input/output behavior. |
-| `search_atc_by_drug()` | See `27_ATC_DDD.py` for exact input/output behavior. |
-| `get_atc_hierarchy()` | See `27_ATC_DDD.py` for exact input/output behavior. |
+| Function | Input | Returns |
+|---|---|---|
+| `load_local(path)` | Excel path | `list[dict]` — cached ATC/DDD records |
+| `search(entity)` | single string | `dict` with `entity`, `entity_type`, `local_hits`, `api_hits` |
+| `search_batch(entities)` | list of strings | `dict[str, dict]` — keyed by entity |
+| `summarize(result)` | search result dict | compact LLM-readable text |
+| `to_json(result)` | search result dict | JSON string |
+
+All functions accept `use_api=True|False` to toggle RxNav queries (default: on).
 
 ## Usage
 
-Read `27_ATC_DDD.py` and copy its call pattern when writing Code Agent query code.
-Keep network timeouts short and preserve the script's native access method
-(REST, direct download, local file scan, or HTML scraping).
+See `if __name__ == "__main__"` block in `27_ATC_DDD.py` for runnable examples:
 
-## Validation
+```python
+from importlib import import_module
+atc = import_module("27_ATC_DDD")
 
-- Validation script: `tools/test_skills_20_29.py`
-- Run: `python tools/test_skills_20_29.py`
+# Drug name → ATC classes
+r = atc.search("aspirin")
+print(atc.summarize(r))
 
-## Notes
+# ATC code → member drugs + DDD
+r = atc.search("N02BA")
+print(atc.summarize(r))
 
-- Review `if __name__ == "__main__"` in `27_ATC_DDD.py` first when generating runnable query code.
-- Primary link from the example: <https://atcddd.fhi.no/atc_ddd_index/>
-- The validation script currently checks:
-- call is_available()
+# Batch
+results = atc.search_batch(["metformin", "A10BA02", "C09XX01"])
 
-## Data Source
+# JSON for pipeline
+print(atc.to_json(atc.search("sparsentan")))
+```
 
-- <https://atcddd.fhi.no/atc_ddd_index/>
+## Data
+
+- **Local file**: `ATC_DDD_new and alterations 2026_final.xlsx`
+- **Columns**: `atc_code`, `atc_level_name`, `new_ddd`, `unit`, `adm_route`, `note`
+- **Path**: `DATA_DIR` / `XLSX_PATH` in `27_ATC_DDD.py`
+- **Remote API**: RxNav RxClass (`rxnav.nlm.nih.gov/REST/rxclass/`)
+- **Citation**: WHOCC — WHO Collaborating Centre for Drug Statistics Methodology, ATC/DDD Index 2026. https://atcddd.fhi.no/atc_ddd_index/
