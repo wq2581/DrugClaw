@@ -127,29 +127,29 @@ Return ONLY Python code."""
         per_skill: Dict[str, Dict[str, str]] = {}
 
         for skill_name in skill_names:
-            print(f"[Code Agent] Querying skill: {skill_name}")
+            print(f"[Code Agent] Generating code for skill: {skill_name}")
 
-            code, output, error = self._structured_template_retrieve(
-                skill_name, entities, query, max_results_per_skill,
+            # Try the code-generation path first
+            skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
+            code, output, error = self._generate_and_run_for_skill(
+                skill_name, skill_info, entities, query,
             )
-            execution_mode = "template"
 
-            if error or not output.strip():
-                print(
-                    f"[Code Agent] Template path produced insufficient output for {skill_name}; "
-                    f"falling back to generated code"
+            if error and not output.strip():
+                # Code-gen path failed — fallback to direct skill.retrieve()
+                print(f"[Code Agent] Code execution failed for {skill_name}, "
+                      f"falling back to skill.retrieve()")
+                fallback_output, fallback_error = self._fallback_retrieve(
+                    skill_name, entities, query, max_results_per_skill,
                 )
-                skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
-                code, output, error = self._generate_and_run_for_skill(
-                    skill_name, skill_info, entities, query,
-                )
-                execution_mode = "codegen"
+                output = fallback_output
+                error = fallback_error
+                code = "(fallback: skill.retrieve())"
 
             per_skill[skill_name] = {
                 "code": code,
                 "output": output,
                 "error": error,
-                "mode": execution_mode,
             }
 
             if output.strip():
@@ -198,24 +198,24 @@ Return ONLY Python code."""
         output, error = self._execute_code(code, timeout_seconds=30)
         return code, output, error
 
-    def _structured_template_retrieve(
+    def _fallback_retrieve(
         self,
         skill_name: str,
         entities: Dict[str, List[str]],
         query: str,
         max_results: int,
     ) -> tuple:
-        """Template-first path: use the skill's unified retrieve() contract."""
+        """Fallback: use the skill's retrieve() method directly."""
         skill = self.skill_registry.get_skill(skill_name)
         if skill is None:
-            return "(template: unavailable)", "", f"Skill '{skill_name}' not registered"
+            return "", f"Skill '{skill_name}' not registered"
 
         try:
             results = skill.retrieve(
                 entities=entities, query=query, max_results=max_results,
             )
             if not results:
-                return "(template: no results)", "", ""
+                return "(no results)", ""
 
             lines = []
             for r in results[:max_results]:
@@ -228,18 +228,10 @@ Return ONLY Python code."""
                     line += f"\n  Evidence: {r.evidence_text}"
                 if r.sources:
                     line += f"\n  Sources: {', '.join(r.sources[:3])}"
-                if r.metadata:
-                    meta_items = [
-                        f"{k}={v}"
-                        for k, v in list(r.metadata.items())[:4]
-                        if v not in ("", None, [], {})
-                    ]
-                    if meta_items:
-                        line += f"\n  Metadata: {', '.join(meta_items)}"
                 lines.append(line)
-            return "(template: skill.retrieve())", "\n".join(lines), ""
+            return "\n".join(lines), ""
         except Exception as exc:
-            return "(template: error)", "", f"retrieve() error: {exc}"
+            return "", f"retrieve() error: {exc}"
 
     # ------------------------------------------------------------------
     # Code execution
