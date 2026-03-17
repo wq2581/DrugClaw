@@ -6,6 +6,8 @@ Source: https://github.com/QSong-github/UniD3
 Multi-KG from 150,000+ PubMed articles. 6 GraphML files covering
 drug-disease matching, effectiveness assessment, and drug-target analysis.
 
+6 KG: UniD3_L1T1.graphml  UniD3_L1T3.graphml  UniD3_L2T2.graphml
+UniD3_L1T2.graphml  UniD3_L2T1.graphml  UniD3_L2T3.graphml
 """
 
 import os, glob
