@@ -70,7 +70,7 @@ Then fill in your real credentials:
   "api_key": "your-api-key-here",
   "base_url": "https://your-endpoint.com/v1",
   "model": "gpt-4o",
-  "max_tokens": 2000,
+  "max_tokens": 20000,
   "timeout": 60,
   "temperature": 0.7
 }
