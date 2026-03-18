@@ -313,3 +313,173 @@ def test_responder_deduplicates_repeated_limitations() -> None:
         if "single supporting evidence item" in limitation.lower()
     ]
     assert len(single_support_limitations) <= 1
+
+
+def test_responder_prioritizes_core_targets_in_target_summary() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(original_query="What are the known drug targets of imatinib?")
+    state.evidence_items = [
+        EvidenceItem(
+            evidence_id="B1",
+            source_skill="BindingDB",
+            source_type="database",
+            source_title="BindingDB record",
+            source_locator="BindingDB",
+            snippet="Imatinib binds ABL1.",
+            structured_payload={},
+            claim="imatinib targets ABL1.",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.96,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "targets",
+                "source_entity": "imatinib",
+                "target_entity": "ABL1",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="D1",
+            source_skill="DGIdb",
+            source_type="database",
+            source_title="DGIdb interaction",
+            source_locator="DGIdb",
+            snippet="Imatinib interacts with ABL1.",
+            structured_payload={},
+            claim="imatinib targets ABL1.",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.88,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "targets",
+                "source_entity": "imatinib",
+                "target_entity": "ABL1",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="B2",
+            source_skill="BindingDB",
+            source_type="database",
+            source_title="BindingDB record",
+            source_locator="BindingDB",
+            snippet="Imatinib binds KIT.",
+            structured_payload={},
+            claim="imatinib targets KIT.",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.95,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "targets",
+                "source_entity": "imatinib",
+                "target_entity": "KIT",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="C1",
+            source_skill="ChEMBL",
+            source_type="database",
+            source_title="ChEMBL activity",
+            source_locator="CHEMBL941",
+            snippet="Imatinib IC50 against PDGFRB.",
+            structured_payload={},
+            claim="IMATINIB has_ic50_activity Platelet-derived growth factor receptor beta",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.90,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "has_ic50_activity",
+                "source_entity": "IMATINIB",
+                "target_entity": "Platelet-derived growth factor receptor beta",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="D2",
+            source_skill="DGIdb",
+            source_type="database",
+            source_title="DGIdb interaction",
+            source_locator="DGIdb",
+            snippet="Imatinib interacts with PDGFRB.",
+            structured_payload={},
+            claim="imatinib targets PDGFRB.",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.86,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "targets",
+                "source_entity": "imatinib",
+                "target_entity": "PDGFRB",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="C2",
+            source_skill="ChEMBL",
+            source_type="database",
+            source_title="ChEMBL activity",
+            source_locator="CHEMBL941",
+            snippet="Imatinib IC50 against FLT3.",
+            structured_payload={},
+            claim="IMATINIB has_ic50_activity Receptor-type tyrosine-protein kinase FLT3",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.70,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "has_ic50_activity",
+                "source_entity": "IMATINIB",
+                "target_entity": "Receptor-type tyrosine-protein kinase FLT3",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+        EvidenceItem(
+            evidence_id="C3",
+            source_skill="ChEMBL",
+            source_type="database",
+            source_title="ChEMBL activity",
+            source_locator="CHEMBL941",
+            snippet="Imatinib IC50 against SRC.",
+            structured_payload={},
+            claim="IMATINIB has_ic50_activity Proto-oncogene tyrosine-protein kinase Src",
+            evidence_kind="database_record",
+            support_direction="supports",
+            confidence=0.0,
+            retrieval_score=0.68,
+            timestamp="2026-03-18T00:00:00Z",
+            metadata={
+                "relationship": "has_ic50_activity",
+                "source_entity": "IMATINIB",
+                "target_entity": "Proto-oncogene tyrosine-protein kinase Src",
+                "source_type": "drug",
+                "target_type": "protein",
+            },
+        ),
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    top_claims = [claim.claim for claim in updated.final_answer_structured.key_claims[:3]]
+    assert any("ABL1" in claim for claim in top_claims)
+    assert any("KIT" in claim for claim in top_claims)
+    assert any("PDGFR" in claim for claim in top_claims)
+    assert "Proto-oncogene tyrosine-protein kinase Src" not in "\n".join(top_claims)

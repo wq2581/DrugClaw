@@ -3,6 +3,7 @@ Responder Agent - Generates intermediate answers based on current evidence
 """
 import re
 from collections import defaultdict
+from math import log10
 from typing import List, Dict, Any
 
 from .claim_assessment import ClaimAssessment, assess_claims
@@ -490,18 +491,30 @@ Formatting requirements:
 
         drug_name = self._extract_primary_drug_name(query, evidence_items)
         assessment_by_claim = {assessment.claim: assessment for assessment in assessments}
-        summaries: List[ClaimSummary] = []
+        ranked_summaries: List[tuple[tuple[Any, ...], ClaimSummary]] = []
         for _, items in grouped.items():
             label = self._choose_target_label(items)
             evidence_ids: List[str] = []
             citations: List[str] = []
             claim_confidences: List[float] = []
+            retrieval_scores: List[float] = []
+            potency_scores: List[float] = []
+            specificity_scores: List[float] = []
             seen_ids = set()
+            source_skills = set()
+            relationship_bonus = 0
             for item in items:
                 assessment = assessment_by_claim.get(item.claim)
                 claim_confidences.append(
                     assessment.confidence if assessment is not None else score_claim_confidence([item])
                 )
+                retrieval_scores.append(float(getattr(item, "retrieval_score", 0.0) or 0.0))
+                potency_scores.append(self._target_potency_score(item))
+                specificity_scores.append(self._target_specificity_score(self._extract_target_label(item)))
+                source_skills.add(str(getattr(item, "source_skill", "")).strip())
+                relationship = str(item.metadata.get("relationship", "")).lower()
+                if "target" in relationship or "bind" in relationship:
+                    relationship_bonus = 1
                 for evidence_id in (
                     assessment.supporting_evidence_ids + assessment.contradicting_evidence_ids
                     if assessment is not None
@@ -513,15 +526,31 @@ Formatting requirements:
                 citation = f"[{item.evidence_id}] {item.source_skill} ({item.source_locator})"
                 if citation not in citations:
                     citations.append(citation)
-            summaries.append(
-                ClaimSummary(
-                    claim=f"{drug_name} targets {label}.",
-                    confidence=max(claim_confidences) if claim_confidences else 0.0,
-                    evidence_ids=evidence_ids,
-                    citations=citations,
+            summary = ClaimSummary(
+                claim=f"{drug_name} targets {label}.",
+                confidence=max(claim_confidences) if claim_confidences else 0.0,
+                evidence_ids=evidence_ids,
+                citations=citations,
+            )
+            ranked_summaries.append(
+                (
+                    (
+                        len(source_skills),
+                        len(evidence_ids),
+                        relationship_bonus,
+                        max(specificity_scores) if specificity_scores else 0.0,
+                        max(potency_scores) if potency_scores else 0.0,
+                        max(claim_confidences) if claim_confidences else 0.0,
+                        max(retrieval_scores) if retrieval_scores else 0.0,
+                        label,
+                    ),
+                    summary,
                 )
             )
-        return sorted(summaries, key=lambda summary: summary.confidence, reverse=True)
+        return [
+            summary
+            for _, summary in sorted(ranked_summaries, key=lambda item: item[0], reverse=True)
+        ]
 
     @staticmethod
     def _build_warnings(
@@ -624,11 +653,20 @@ Formatting requirements:
             )
 
         lines = [f"Query: {query}", "", "Known Targets:"]
-        for claim in claims[:8]:
+        display_claims = claims[:5]
+        for claim in display_claims:
             target_label = claim.claim.replace(" targets ", " -> ").rstrip(".")
             lines.append(
                 f"- {target_label} "
                 f"(confidence {claim.confidence:.2f}; evidence {', '.join(claim.evidence_ids[:4])})"
+            )
+
+        if len(claims) > len(display_claims):
+            lines.extend(
+                [
+                    "",
+                    "Additional target-like activity evidence is available in the Evidence Summary.",
+                ]
             )
 
         if warnings:
@@ -654,16 +692,116 @@ Formatting requirements:
 
     @staticmethod
     def _choose_target_label(items: List[Any]) -> str:
-        labels = [ResponderAgent._extract_target_label(item) for item in items]
+        labels = [ResponderAgent._normalize_target_label(ResponderAgent._extract_target_label(item)) for item in items]
         labels = [label for label in labels if label]
         if not labels:
             return "unknown target"
+        symbol_like = [label for label in labels if ResponderAgent._looks_like_target_symbol(label)]
+        if symbol_like:
+            return min(symbol_like, key=len)
         return max(labels, key=len)
 
     @staticmethod
     def _canonical_target_key(label: str) -> str:
+        normalized = ResponderAgent._normalize_target_label(label)
+        if normalized:
+            return normalized.lower()
         cleaned = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
         return cleaned
+
+    @staticmethod
+    def _normalize_target_label(label: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(label).strip())
+        if not cleaned:
+            return ""
+
+        normalized = cleaned.lower()
+        alias_map = {
+            "tyrosine-protein kinase abl1": "ABL1",
+            "tyrosine-protein kinase abl": "ABL1",
+            "abl1": "ABL1",
+            "abl": "ABL1",
+            "mast/stem cell growth factor receptor kit": "KIT",
+            "kit": "KIT",
+            "platelet-derived growth factor receptor beta": "PDGFRB",
+            "pdgfrb": "PDGFRB",
+            "platelet-derived growth factor receptor alpha": "PDGFRA",
+            "pdgfra": "PDGFRA",
+            "receptor-type tyrosine-protein kinase flt3": "FLT3",
+            "flt3": "FLT3",
+            "macrophage colony-stimulating factor 1 receptor": "CSF1R",
+            "csf1r": "CSF1R",
+            "epidermal growth factor receptor": "EGFR",
+            "egfr": "EGFR",
+            "proto-oncogene tyrosine-protein kinase src": "SRC",
+            "src": "SRC",
+        }
+        if normalized in alias_map:
+            return alias_map[normalized]
+
+        token_match = re.search(r"\b([A-Z0-9-]{2,8})\b$", cleaned.upper())
+        if token_match:
+            token = token_match.group(1)
+            if token not in {"TYPE", "ALPHA", "BETA", "GAMMA", "RECEPTOR", "KINASE", "PROTEIN"}:
+                return token
+        return cleaned
+
+    @staticmethod
+    def _looks_like_target_symbol(label: str) -> bool:
+        return bool(re.fullmatch(r"[A-Z0-9-]{2,8}", label.strip()))
+
+    @staticmethod
+    def _target_specificity_score(label: str) -> float:
+        normalized = ResponderAgent._normalize_target_label(label)
+        if not normalized:
+            return 0.0
+        if ResponderAgent._looks_like_target_symbol(normalized):
+            return 1.0
+
+        lowered = normalized.lower()
+        generic_family_labels = {
+            "platelet-derived growth factor receptor",
+            "tyrosine-protein kinase",
+            "protein kinase",
+            "receptor",
+        }
+        if lowered in generic_family_labels:
+            return 0.1
+        return 0.4
+
+    @staticmethod
+    def _target_potency_score(item: Any) -> float:
+        value = None
+        structured_payload = getattr(item, "structured_payload", {}) or {}
+        for key in ("affinity_value", "value", "standard_value"):
+            raw = structured_payload.get(key)
+            parsed = ResponderAgent._coerce_float(raw)
+            if parsed is not None and parsed > 0:
+                value = parsed
+                break
+
+        if value is None:
+            snippet = str(getattr(item, "snippet", "") or "")
+            match = re.search(r"\b(?:IC50|Ki|Kd|EC50)\s*=\s*([0-9]+(?:\.[0-9]+)?)", snippet, re.IGNORECASE)
+            if match:
+                value = ResponderAgent._coerce_float(match.group(1))
+
+        if value is None or value <= 0:
+            return 0.0
+
+        # Smaller potency values are generally stronger evidence for a direct
+        # target-like interaction. Compress to [0, 1] to avoid dominating
+        # source-count and support-count signals.
+        return max(0.0, 1.0 - min(log10(max(value, 1.0)), 6.0) / 6.0)
+
+    @staticmethod
+    def _coerce_float(value: Any) -> float | None:
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _looks_like_cell_line(label: str) -> bool:
