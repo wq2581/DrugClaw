@@ -414,6 +414,15 @@ class DrugClawSystem:
                     if hasattr(final_answer_structured, "to_dict")
                     else final_answer_structured
                 ),
+                "query_plan": (
+                    final.get("query_plan").to_dict()
+                    if getattr(final.get("query_plan"), "to_dict", None)
+                    else final.get("query_plan")
+                ),
+                "claim_assessments": [
+                    assessment.to_dict() if hasattr(assessment, "to_dict") else assessment
+                    for assessment in final.get("claim_assessments", [])
+                ],
                 "mode":               thinking_mode,
                 "resource_filter":    resource_filter or [],
                 "iterations":         iteration,

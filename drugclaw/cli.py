@@ -80,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print structured evidence, key claims, and confidence after the answer.",
     )
+    run_parser.add_argument(
+        "--show-plan",
+        action="store_true",
+        help="Print the structured query plan summary after the answer.",
+    )
+    run_parser.add_argument(
+        "--show-claims",
+        action="store_true",
+        help="Print structured claim assessment summaries after the answer.",
+    )
 
     demo_parser = subparsers.add_parser(
         "demo",
@@ -100,6 +110,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-evidence",
         action="store_true",
         help="Print structured evidence, key claims, and confidence after the answer.",
+    )
+    demo_parser.add_argument(
+        "--show-plan",
+        action="store_true",
+        help="Print the structured query plan summary after the answer.",
+    )
+    demo_parser.add_argument(
+        "--show-claims",
+        action="store_true",
+        help="Print structured claim assessment summaries after the answer.",
     )
 
     doctor_parser = subparsers.add_parser(
@@ -402,6 +422,8 @@ def _run_query(
     key_file: str,
     resource_filter: List[str] | None,
     show_evidence: bool = False,
+    show_plan: bool = False,
+    show_claims: bool = False,
 ) -> int:
     config = Config(key_file=key_file)
     system = DrugClawSystem(config)
@@ -414,6 +436,10 @@ def _run_query(
 
     if show_evidence:
         _print_evidence_summary(result)
+    if show_plan:
+        _print_plan_summary(result)
+    if show_claims:
+        _print_claim_summary(result)
 
     return 0 if result.get("success") else 1
 
@@ -443,6 +469,47 @@ def _print_evidence_summary(result: dict) -> None:
         print("limitations=" + " | ".join(limitations[:5]))
 
 
+def _print_plan_summary(result: dict) -> None:
+    plan = result.get("query_plan") or {}
+    if not plan:
+        print("\n[DrugClaw plan] no structured query plan available")
+        return
+
+    print("\n== Query Plan ==")
+    print(f"question_type={plan.get('question_type', 'unknown')}")
+
+    preferred_skills = plan.get("preferred_skills", [])
+    if preferred_skills:
+        print("preferred_skills=" + ", ".join(preferred_skills))
+
+    print(
+        "requires_graph_reasoning="
+        + str(plan.get("requires_graph_reasoning", False))
+    )
+
+    graph_reason = result.get("graph_decision_reason", "")
+    if graph_reason:
+        print(f"graph_decision_reason={graph_reason}")
+
+
+def _print_claim_summary(result: dict) -> None:
+    assessments = result.get("claim_assessments") or []
+    if not assessments:
+        print("\n[DrugClaw claims] no structured claim assessments available")
+        return
+
+    print("\n== Claim Assessments ==")
+    for assessment in assessments[:5]:
+        support_ids = ", ".join(assessment.get("supporting_evidence_ids", []))
+        contradict_ids = ", ".join(assessment.get("contradicting_evidence_ids", []))
+        print(
+            f"- {assessment.get('claim', '')} "
+            f"(verdict={assessment.get('verdict', 'unknown')}; "
+            f"confidence={assessment.get('confidence', 0.0):.2f}; "
+            f"support={support_ids or '-'}; contradict={contradict_ids or '-'})"
+        )
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
@@ -454,6 +521,8 @@ def main(argv: List[str] | None = None) -> int:
             key_file=args.key_file,
             resource_filter=args.resource_filter,
             show_evidence=args.show_evidence,
+            show_plan=args.show_plan,
+            show_claims=args.show_claims,
         )
 
     if args.command == "doctor":
@@ -472,4 +541,6 @@ def main(argv: List[str] | None = None) -> int:
         key_file=args.key_file,
         resource_filter=preset["resource_filter"],
         show_evidence=args.show_evidence,
+        show_plan=args.show_plan,
+        show_claims=args.show_claims,
     )
