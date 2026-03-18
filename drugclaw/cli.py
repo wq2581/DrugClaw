@@ -156,8 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _status_line(label: str, ok: bool, detail: str) -> str:
-    status = "OK" if ok else "FAIL"
+def _status_line(label: str, ok: bool, detail: str, *, level: str | None = None) -> str:
+    status = level or ("OK" if ok else "FAIL")
     return f"[{status}] {label}: {detail}"
 
 
@@ -250,23 +250,24 @@ def _doctor_check_registry(key_file: str) -> List[str]:
 
     lines = _registry_summary_lines(resource_registry.summarize_registry())
     for entry in resource_registry.get_all_resources():
-        usable = entry.status == "ready"
         detail = (
             f"category={entry.category}; access={entry.access_mode}; "
             f"status={entry.status}; reason={entry.status_reason}"
         )
-        lines.append(_status_line(f"resource:{entry.name}", usable or not entry.enabled, detail))
+        if not entry.enabled or entry.status == "ready":
+            lines.append(_status_line(f"resource:{entry.name}", True, detail))
+            continue
+        lines.append(_status_line(f"resource:{entry.name}", False, detail, level="WARN"))
     return lines
 
 
 def _doctor_check_presets(key_file: str) -> List[str]:
     lines: List[str] = []
     try:
-        config, _ = _load_registry_for_cli(key_file, strict_config=True)
+        registry, resource_registry = _load_registry_for_cli(key_file, strict_config=True)
     except Exception as exc:
         return [_status_line("config", False, f"cannot initialize Config ({exc})")]
 
-    registry = build_default_registry(config)
     for preset_name, preset in DEMO_PRESETS.items():
         required = preset["resource_filter"]
         unavailable = []
@@ -277,32 +278,10 @@ def _doctor_check_presets(key_file: str) -> List[str]:
                 unavailable.append(skill_name)
                 details.append(f"{skill_name}=missing")
                 continue
-            access = getattr(skill, "access_mode", "unknown")
-            available = skill.is_available()
-            local_paths: List[Path] = []
-            if access in {"LOCAL_FILE", "DATASET"}:
-                for value in skill.config.values():
-                    if isinstance(value, str) and value:
-                        path = Path(value).expanduser()
-                        if not path.is_absolute():
-                            path = (Path.cwd() / path).resolve()
-                        local_paths.append(path)
-                    elif isinstance(value, dict):
-                        for nested in value.values():
-                            if isinstance(nested, str) and nested:
-                                path = Path(nested).expanduser()
-                                if not path.is_absolute():
-                                    path = (Path.cwd() / path).resolve()
-                                local_paths.append(path)
-                if local_paths:
-                    existing_paths = [path for path in local_paths if path.exists()]
-                    available = bool(existing_paths)
-                    path_note = f"{len(existing_paths)}/{len(local_paths)} files"
-                else:
-                    available = False
-                    path_note = "no local path configured"
-            else:
-                path_note = "available" if available else "unavailable"
+            entry = resource_registry.get_resource(skill_name) if resource_registry is not None else None
+            access = getattr(entry, "access_mode", getattr(skill, "access_mode", "unknown"))
+            available = bool(skill.is_available())
+            path_note = "available" if available else getattr(entry, "status_reason", "unavailable")
             if access == "CLI" and hasattr(skill, "_cli_available"):
                 cli_ok = skill._cli_available()  # type: ignore[attr-defined]
                 details.append(f"{skill_name}={access}:{'cli' if cli_ok else 'rest-fallback'}")
