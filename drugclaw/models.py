@@ -182,6 +182,7 @@ class AgentState:
     query_plan: Optional[QueryPlan] = None
     evidence_items: List[EvidenceItem] = field(default_factory=list)
     claim_assessments: List[Any] = field(default_factory=list)
+    retrieval_diagnostics: List[Dict[str, Any]] = field(default_factory=list)
     ranked_paths: List[EvidencePath] = field(default_factory=list)
     reflection_feedback: str = ""
     web_search_results: List[Dict[str, Any]] = field(default_factory=list)
@@ -235,6 +236,7 @@ class AgentStateDict(TypedDict, total=False):
     query_plan: Optional[QueryPlan]
     evidence_items: List[EvidenceItem]
     claim_assessments: List[Any]
+    retrieval_diagnostics: List[Dict[str, Any]]
     ranked_paths: List[EvidencePath]
     reflection_feedback: str
     web_search_results: List[Dict[str, Any]]

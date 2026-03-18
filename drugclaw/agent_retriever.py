@@ -224,6 +224,9 @@ Provide your plan in JSON format:
         state.evidence_items = self._build_evidence_items(
             coder_result, selected_skills, state.original_query,
         )
+        state.retrieval_diagnostics = self._build_retrieval_diagnostics(
+            coder_result, selected_skills,
+        )
         state.code_agent_code = "\n---\n".join(
             f"# Skill: {name}\n{info.get('code', '')}"
             for name, info in coder_result.get("per_skill", {}).items()
@@ -289,7 +292,15 @@ Provide your plan in JSON format:
             except Exception:
                 skill = None
 
-            if skill is not None:
+            if skill is None:
+                continue
+
+            try:
+                is_available = skill.is_available() if hasattr(skill, "is_available") else True
+            except Exception:
+                is_available = False
+
+            if is_available:
                 available.append(skill_name)
 
         return available
@@ -423,6 +434,25 @@ Respond in JSON:
                 )
             )
         return items
+
+    @staticmethod
+    def _build_retrieval_diagnostics(
+        coder_result: Dict[str, Any],
+        skill_names: List[str],
+    ) -> List[Dict[str, Any]]:
+        diagnostics: List[Dict[str, Any]] = []
+        for skill_name in skill_names:
+            info = coder_result.get("per_skill", {}).get(skill_name, {})
+            diagnostics.append(
+                {
+                    "skill": skill_name,
+                    "strategy": info.get("strategy", ""),
+                    "error": info.get("error", ""),
+                    "records": len(info.get("records", []) or []),
+                    "output": info.get("output", ""),
+                }
+            )
+        return diagnostics
 
     @staticmethod
     def _evidence_items_to_retrieved_content(evidence_items) -> List[Dict[str, Any]]:

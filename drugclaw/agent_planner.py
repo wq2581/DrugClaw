@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, List, Optional
 
 from .query_plan import QueryPlan, build_fallback_query_plan
@@ -90,9 +91,12 @@ Rules:
 
     def _normalize_query_plan(self, query: str, payload: Dict[str, Any]) -> QueryPlan:
         fallback = build_fallback_query_plan(query)
+        entities = self._normalize_entities(payload.get("entities"))
+        if not entities:
+            entities = self._infer_entities_from_query(query)
         return QueryPlan(
             question_type=str(payload.get("question_type") or fallback.question_type),
-            entities=self._normalize_entities(payload.get("entities")),
+            entities=entities,
             subquestions=self._normalize_list(payload.get("subquestions")) or fallback.subquestions,
             preferred_skills=self._normalize_list(payload.get("preferred_skills")),
             preferred_evidence_types=self._normalize_list(payload.get("preferred_evidence_types")),
@@ -130,3 +134,37 @@ Rules:
             if text:
                 normalized.append(text)
         return normalized
+
+    @staticmethod
+    def _infer_entities_from_query(query: str) -> Dict[str, List[str]]:
+        lowered = query.strip().lower()
+        if not lowered:
+            return {}
+
+        ddi_match = re.search(
+            r"how does\s+([a-z0-9\-]+)\s+interact with\s+([a-z0-9\-]+)",
+            lowered,
+        )
+        if ddi_match:
+            return {"drug": [ddi_match.group(1), ddi_match.group(2)]}
+
+        for pattern in (
+            r"targets?\s+of\s+([a-z0-9\-]+)",
+            r"information\s+is\s+available\s+for\s+([a-z0-9\-]+)",
+            r"available\s+for\s+([a-z0-9\-]+)",
+            r"about\s+([a-z0-9\-]+)$",
+        ):
+            match = re.search(pattern, lowered)
+            if match:
+                return {"drug": [match.group(1)]}
+
+        tokens = re.findall(r"[a-z0-9\-]+", lowered)
+        stopwords = {
+            "what", "are", "the", "known", "drug", "drugs", "target", "targets",
+            "of", "for", "does", "is", "available", "information", "how",
+            "interact", "with", "and", "safety", "prescribing",
+        }
+        candidates = [token for token in tokens if token not in stopwords and len(token) > 2]
+        if candidates:
+            return {"drug": [candidates[-1]]}
+        return {}

@@ -58,6 +58,27 @@ class _SelectiveRegistryStub(_RegistryStub):
         return None
 
 
+class _AvailabilitySkillStub:
+    def __init__(self, available: bool):
+        self._available = available
+
+    def is_available(self):
+        return self._available
+
+
+class _AvailabilityRegistryStub(_RegistryStub):
+    def __init__(self, availability):
+        self.availability = dict(availability)
+
+    def get_skills_for_query(self, query):
+        return list(self.availability)
+
+    def get_skill(self, skill_name):
+        if skill_name not in self.availability:
+            return None
+        return _AvailabilitySkillStub(self.availability[skill_name])
+
+
 def test_retriever_consumes_query_plan_when_present() -> None:
     state = AgentState(
         original_query="What does imatinib target?",
@@ -179,6 +200,37 @@ def test_retriever_normalizes_singular_entity_keys_from_query_plan() -> None:
     retriever.execute(state)
 
     assert coder.last_entities == {"drug": ["imatinib"], "gene": ["ABL1"]}
+
+
+def test_retriever_filters_unavailable_skills_from_query_plan() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What does imatinib target?",
+        query_plan=QueryPlan(
+            question_type="target_lookup",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["TTD", "BindingDB"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _AvailabilityRegistryStub({"TTD": False, "BindingDB": True}),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert "BindingDB" in updated.retrieved_text
+    assert "TTD" not in updated.retrieved_text
+    assert coder.last_skill_names == ["BindingDB"]
 
 
 class _NoOpAgent:

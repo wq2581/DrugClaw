@@ -82,7 +82,8 @@ class TTDSkill(RAGSkill):
             logger.error("TTD: load failed — %s", exc)
 
     def is_available(self) -> bool:
-        return self._implemented
+        self._ensure_loaded()
+        return bool(self._drug_index or self._target_index)
 
     def retrieve(
         self,

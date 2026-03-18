@@ -192,6 +192,13 @@ Directly answer the query. Use a table if comparing multiple items:
             print(f"[Responder Agent] Simple structured answer ({len(state.current_answer)} chars)")
             return state
 
+        if self._should_return_insufficient_answer(state):
+            final_answer = self._build_insufficient_final_answer(state)
+            state.final_answer_structured = final_answer
+            state.current_answer = final_answer.answer_text
+            print(f"[Responder Agent] Simple insufficient-evidence answer ({len(state.current_answer)} chars)")
+            return state
+
         # Prefer the new free-form retrieved_text (from Code Agent)
         retrieved_text = getattr(state, "retrieved_text", "")
 
@@ -266,6 +273,74 @@ Formatting requirements:
 
         print(f"[Responder Agent] Simple answer ({len(state.current_answer)} chars)")
         return state
+
+    @staticmethod
+    def _should_return_insufficient_answer(state: AgentState) -> bool:
+        if state.evidence_items:
+            return False
+
+        raw = getattr(state, "retrieved_content", []) or []
+        if not raw:
+            return True
+
+        for record in raw:
+            if record.get("source_entity") or record.get("target_entity"):
+                return False
+            if record.get("relationship"):
+                return False
+            text = (record.get("evidence_text") or "").strip().lower()
+            if text and "no results" not in text and "error" not in text:
+                return False
+        return True
+
+    def _build_insufficient_final_answer(self, state: AgentState) -> FinalAnswer:
+        diagnostics = getattr(state, "retrieval_diagnostics", []) or []
+        warnings = ["No structured evidence was retrieved for this query."]
+        limitations = ["The current run did not return any structured evidence items."]
+
+        if not getattr(state, "current_query_entities", {}):
+            limitations.append("Entity extraction did not identify concrete query entities.")
+
+        diagnostic_lines = []
+        for item in diagnostics[:5]:
+            skill = item.get("skill", "?")
+            error = item.get("error", "")
+            records = item.get("records", 0)
+            if error:
+                diagnostic_lines.append(f"- {skill}: {error}")
+            elif not records:
+                diagnostic_lines.append(f"- {skill}: no records returned")
+
+        lines = [
+            f"Query: {state.original_query}",
+            "",
+            "No structured evidence was retrieved for this query.",
+            "",
+            "Likely causes:",
+        ]
+        if diagnostic_lines:
+            lines.extend(diagnostic_lines)
+        else:
+            lines.append("- Selected resources returned no structured records.")
+
+        lines.extend(
+            [
+                "",
+                "Next steps:",
+                "- Verify local-file skill metadata paths are configured correctly.",
+                "- Prefer ready API-backed resources or use an explicit resource filter.",
+            ]
+        )
+
+        return FinalAnswer(
+            answer_text="\n".join(lines),
+            summary_confidence=0.0,
+            key_claims=[],
+            evidence_items=[],
+            citations=[],
+            limitations=limitations,
+            warnings=warnings,
+        )
 
     def _respond_from_evidence(self, state: AgentState) -> None:
         final_answer = self._build_final_answer(

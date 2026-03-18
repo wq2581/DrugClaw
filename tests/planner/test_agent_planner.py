@@ -92,3 +92,24 @@ def test_planner_uses_fallback_plan_when_llm_output_is_invalid() -> None:
 
     assert plan.question_type == "unknown"
     assert plan.subquestions == ["Tell me about imatinib"]
+
+
+def test_planner_infers_drug_entity_when_model_returns_no_entities() -> None:
+    plan = PlannerAgent(
+        _LLMStub(
+            {
+                "question_type": "Drug-Target Interaction",
+                "entities": {},
+                "subquestions": ["What are the primary protein targets of imatinib?"],
+                "preferred_skills": ["ChEMBL", "BindingDB"],
+                "preferred_evidence_types": ["database_record"],
+                "requires_graph_reasoning": True,
+                "requires_prediction_sources": False,
+                "requires_web_fallback": False,
+                "answer_risk_level": "low",
+                "notes": ["Focus on known targets."],
+            }
+        )
+    ).plan("What are the known drug targets of imatinib?")
+
+    assert plan.entities == {"drug": ["imatinib"]}

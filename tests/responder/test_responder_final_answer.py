@@ -96,3 +96,42 @@ def test_responder_uses_claim_assessments_when_present() -> None:
     assert updated.final_answer_structured is not None
     assert updated.final_answer_structured.key_claims[0].claim == "Imatinib targets ABL1."
     assert updated.final_answer_structured.key_claims[0].confidence == 0.88
+
+
+def test_responder_reports_insufficient_evidence_instead_of_hallucinating() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(original_query="What are the known drug targets of imatinib?")
+    state.retrieved_text = (
+        "Query: What are the known drug targets of imatinib?\n"
+        "Key Entities: {}\n"
+        "Skills Used: ['TTD', 'ChEMBL']\n\n"
+        "=== Results from TTD ===\n(no results retrieved; error: file not found)\n"
+        "=== Results from ChEMBL ===\n(no results retrieved)\n"
+    )
+    state.retrieved_content = [
+        {
+            "source": "TTD",
+            "source_entity": "",
+            "target_entity": "",
+            "relationship": "",
+            "evidence_text": "(no results retrieved; error: file not found)",
+        },
+        {
+            "source": "ChEMBL",
+            "source_entity": "",
+            "target_entity": "",
+            "relationship": "",
+            "evidence_text": "(no results retrieved)",
+        },
+    ]
+    state.retrieval_diagnostics = [
+        {"skill": "TTD", "strategy": "fallback_retrieve", "error": "file not found", "records": 0},
+        {"skill": "ChEMBL", "strategy": "fallback_retrieve", "error": "", "records": 0},
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.summary_confidence == 0.0
+    assert "No structured evidence was retrieved" in updated.current_answer
+    assert "TTD" in updated.current_answer
