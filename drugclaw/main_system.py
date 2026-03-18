@@ -374,6 +374,7 @@ class DrugClawSystem:
         thinking_mode: str = ThinkingMode.GRAPH,
         resource_filter: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        verbose: bool = True,
     ) -> Dict[str, Any]:
         """
         Execute a drug-related query.
@@ -394,12 +395,6 @@ class DrugClawSystem:
                         final_reward, reasoning_history, retrieved_content,
                         web_search_results, success, [query_id]
         """
-        print(f"\n{'='*80}")
-        print(f"QUERY [{thinking_mode}]: {query}")
-        if resource_filter:
-            print(f"RESOURCE FILTER: {resource_filter}")
-        print(f"{'='*80}\n")
-
         initial_state = AgentState(
             original_query=query,
             omics_constraints=omics_constraints,
@@ -408,7 +403,17 @@ class DrugClawSystem:
         )
 
         try:
-            final = self.workflow.invoke(initial_state)
+            if verbose:
+                print(f"\n{'='*80}")
+                print(f"QUERY [{thinking_mode}]: {query}")
+                if resource_filter:
+                    print(f"RESOURCE FILTER: {resource_filter}")
+                print(f"{'='*80}\n")
+                final = self.workflow.invoke(initial_state)
+            else:
+                sink = StringIO()
+                with redirect_stdout(sink), redirect_stderr(sink):
+                    final = self.workflow.invoke(initial_state)
 
             final_answer    = final.get("final_answer", final.get("current_answer", ""))
             final_answer_structured = final.get("final_answer_structured")
@@ -467,11 +472,17 @@ class DrugClawSystem:
             formatted_answer = wrap_answer_card(final_answer, result)
             result["formatted_answer"] = formatted_answer
 
-            print(f"\n{'='*80}\nFINAL ANSWER\n{'='*80}\n")
-            print(formatted_answer)
+            if verbose:
+                print(f"\n{'='*80}\nFINAL ANSWER\n{'='*80}\n")
+                print(formatted_answer)
 
             if self.enable_logging and self.logger:
-                result["query_id"] = self.logger.log_query(query, result, metadata)
+                if verbose:
+                    result["query_id"] = self.logger.log_query(query, result, metadata)
+                else:
+                    sink = StringIO()
+                    with redirect_stdout(sink), redirect_stderr(sink):
+                        result["query_id"] = self.logger.log_query(query, result, metadata)
 
             return result
 

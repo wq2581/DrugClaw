@@ -32,6 +32,11 @@ class _LLMStub:
         return self._responses.pop(0)
 
 
+class _LLMShouldNotRun:
+    def generate(self, messages, temperature=0.3):
+        raise AssertionError("LLM should not be called in direct_retrieve mode")
+
+
 @dataclass
 class _SkillStub:
     name: str = "DemoSkill"
@@ -140,4 +145,20 @@ def test_generate_and_execute_falls_back_when_execution_raises() -> None:
     )
 
     assert result["per_skill"][skill.name]["strategy"] == "fallback_retrieve"
+    assert "Imatinib targets ABL1." in result["per_skill"][skill.name]["output"]
+
+
+def test_generate_and_execute_can_use_direct_retrieve_strategy() -> None:
+    skill = _SkillStub()
+    agent = CoderAgent(_LLMShouldNotRun(), _RegistryStub(skill))
+
+    result = agent.generate_and_execute(
+        skill_names=[skill.name],
+        entities={"drug": ["imatinib"]},
+        query="What does imatinib target?",
+        max_results_per_skill=5,
+        execution_strategy="direct_retrieve",
+    )
+
+    assert result["per_skill"][skill.name]["strategy"] == "direct_retrieve"
     assert "Imatinib targets ABL1." in result["per_skill"][skill.name]["output"]

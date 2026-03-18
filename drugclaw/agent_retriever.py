@@ -192,12 +192,14 @@ Provide your plan in JSON format:
 
         # Normalize entities for Code Agent
         entities = self._normalize_entities_for_coder(key_entities)
+        execution_strategy = self._select_execution_strategy(state)
 
         # Delegate to Code Agent
         coder_result = self.coder.generate_and_execute(
             skill_names=selected_skills,
             entities=entities,
             query=state.original_query,
+            execution_strategy=execution_strategy,
         )
 
         # Build a combined context string with query + entities + results
@@ -262,6 +264,41 @@ Provide your plan in JSON format:
         if constraints.tissue_types:
             parts.append(f"Tissues: {', '.join(constraints.tissue_types)}")
         return "\n".join(parts) if parts else "No specific constraints."
+
+    @staticmethod
+    def _select_execution_strategy(state: AgentState) -> str:
+        plan = getattr(state, "query_plan", None)
+        thinking_mode = str(getattr(state, "thinking_mode", ""))
+        question_type = str(getattr(plan, "question_type", "")).strip().lower().replace("-", "_").replace(" ", "_")
+        original_query = str(getattr(state, "original_query", "")).strip().lower()
+        entities = getattr(plan, "entities", {}) if plan is not None else {}
+        has_drug_entity = bool(getattr(entities, "get", lambda *_: [])("drug"))
+        direct_question_type = any(
+            marker in question_type
+            for marker in (
+                "target",
+                "label",
+                "retrieval",
+            )
+        )
+        direct_query_shape = has_drug_entity and any(
+            marker in original_query
+            for marker in (
+                "target",
+                "targets",
+                "label",
+                "prescribing",
+                "information",
+            )
+        )
+        if (
+            thinking_mode == "simple"
+            and plan is not None
+            and (direct_question_type or direct_query_shape)
+            and not getattr(plan, "requires_graph_reasoning", False)
+        ):
+            return "direct_retrieve"
+        return "auto"
 
     def _query_plan_to_retrieval_plan(
         self,

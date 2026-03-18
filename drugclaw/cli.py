@@ -90,6 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print structured claim assessment summaries after the answer.",
     )
+    run_parser.add_argument(
+        "--debug-agents",
+        action="store_true",
+        help="Print internal agent routing and execution logs.",
+    )
 
     demo_parser = subparsers.add_parser(
         "demo",
@@ -120,6 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-claims",
         action="store_true",
         help="Print structured claim assessment summaries after the answer.",
+    )
+    demo_parser.add_argument(
+        "--debug-agents",
+        action="store_true",
+        help="Print internal agent routing and execution logs.",
     )
 
     doctor_parser = subparsers.add_parser(
@@ -424,15 +434,29 @@ def _run_query(
     show_evidence: bool = False,
     show_plan: bool = False,
     show_claims: bool = False,
+    debug_agents: bool = False,
 ) -> int:
     config = Config(key_file=key_file)
     system = DrugClawSystem(config)
+
+    if not debug_agents:
+        print(f"\n{'='*80}")
+        print(f"QUERY [{thinking_mode}]: {query}")
+        if resource_filter:
+            print(f"RESOURCE FILTER: {resource_filter}")
+        print(f"{'='*80}\n")
 
     result = system.query(
         query,
         thinking_mode=thinking_mode,
         resource_filter=resource_filter or [],
+        verbose=debug_agents,
     )
+
+    if not debug_agents:
+        formatted_answer = result.get("formatted_answer") or result.get("answer", "")
+        print(f"\n{'='*80}\nFINAL ANSWER\n{'='*80}\n")
+        print(formatted_answer)
 
     if show_evidence:
         _print_evidence_summary(result)
@@ -523,6 +547,7 @@ def main(argv: List[str] | None = None) -> int:
             show_evidence=args.show_evidence,
             show_plan=args.show_plan,
             show_claims=args.show_claims,
+            debug_agents=args.debug_agents,
         )
 
     if args.command == "doctor":
@@ -543,4 +568,5 @@ def main(argv: List[str] | None = None) -> int:
         show_evidence=args.show_evidence,
         show_plan=args.show_plan,
         show_claims=args.show_claims,
+        debug_agents=args.debug_agents,
     )

@@ -15,10 +15,19 @@ class _CoderStub:
     def __init__(self):
         self.last_entities = None
         self.last_skill_names = None
+        self.last_execution_strategy = None
 
-    def generate_and_execute(self, skill_names, entities, query, max_results_per_skill=30):
+    def generate_and_execute(
+        self,
+        skill_names,
+        entities,
+        query,
+        max_results_per_skill=30,
+        execution_strategy="auto",
+    ):
         self.last_entities = entities
         self.last_skill_names = skill_names
+        self.last_execution_strategy = execution_strategy
         per_skill = {}
         for skill_name in skill_names:
             per_skill[skill_name] = {
@@ -241,6 +250,126 @@ def test_retriever_filters_unavailable_skills_from_query_plan() -> None:
     assert coder.last_skill_names == ["BindingDB"]
 
 
+def test_retriever_prefers_direct_retrieve_for_simple_target_lookup() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What are the known drug targets of imatinib?",
+        thinking_mode="simple",
+        query_plan=QueryPlan(
+            question_type="target_lookup",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["BindingDB"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["BindingDB"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
+def test_retriever_prefers_direct_retrieve_for_simple_drug_target_interaction() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What are the known drug targets of imatinib?",
+        thinking_mode="simple",
+        query_plan=QueryPlan(
+            question_type="Drug-Target Interaction",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["ChEMBL"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["ChEMBL"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
+def test_retriever_prefers_direct_retrieve_for_simple_drug_target_identification() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What are the known drug targets of imatinib?",
+        thinking_mode="simple",
+        query_plan=QueryPlan(
+            question_type="drug_target_identification",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["ChEMBL"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["ChEMBL"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
+def test_retriever_prefers_direct_retrieve_for_simple_relationship_retrieval_targets() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What are the known drug targets of imatinib?",
+        thinking_mode="simple",
+        query_plan=QueryPlan(
+            question_type="Relationship Retrieval",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["ChEMBL"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["ChEMBL"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
 def test_retriever_prioritizes_ready_remote_skills_for_fallback() -> None:
     coder = _CoderStub()
     state = AgentState(
@@ -319,12 +448,31 @@ class _RetrieverNodeStub(_NoOpAgent):
         return state
 
 
+class _VerboseRetrieverNodeStub(_NoOpAgent):
+    def execute(self, state):
+        print("[Retriever Agent] noisy retriever log")
+        state.retrieved_text = "retrieved"
+        return state
+
+
 class _ResponderNodeStub(_NoOpAgent):
     def execute(self, state):
         state.current_answer = "answer"
         return state
 
     def execute_simple(self, state):
+        state.current_answer = "answer"
+        return state
+
+
+class _VerboseResponderNodeStub(_NoOpAgent):
+    def execute(self, state):
+        print("[Responder Agent] noisy responder log")
+        state.current_answer = "answer"
+        return state
+
+    def execute_simple(self, state):
+        print("[Responder Agent] noisy simple responder log")
         state.current_answer = "answer"
         return state
 
@@ -407,6 +555,28 @@ def test_graph_mode_skips_graph_when_plan_and_evidence_do_not_require_it(monkeyp
 
     assert result["success"] is True
     assert "OPTIONAL_GRAPH:skipped" in result["execution_trace"]
+
+
+def test_query_verbose_false_suppresses_agent_logs(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(main_system_module, "LLMClient", lambda config: object())
+    monkeypatch.setattr(main_system_module, "build_default_registry", lambda config: _RuntimeRegistryStub())
+    monkeypatch.setattr(main_system_module, "build_resource_registry", lambda registry: object())
+    monkeypatch.setattr(main_system_module, "CoderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RetrieverAgent", _VerboseRetrieverNodeStub)
+    monkeypatch.setattr(main_system_module, "GraphBuilderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RerankerAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "ResponderAgent", _VerboseResponderNodeStub)
+    monkeypatch.setattr(main_system_module, "ReflectorAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "WebSearchAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "wrap_answer_card", lambda answer, result: answer)
+
+    system = main_system_module.DrugClawSystem(config=object(), enable_logging=False)
+    result = system.query("What does imatinib target?", thinking_mode="simple", verbose=False)
+    captured = capsys.readouterr()
+
+    assert result["success"] is True
+    assert "[Retriever Agent]" not in captured.out
+    assert "[Responder Agent]" not in captured.out
 
 
 def test_system_init_suppresses_registry_startup_noise(monkeypatch, capsys) -> None:
