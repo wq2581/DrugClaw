@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-from .query_plan import QueryPlan, build_fallback_query_plan
+from .query_plan import (
+    QueryPlan,
+    build_fallback_query_plan,
+    is_direct_target_lookup,
+    prioritize_target_lookup_skills,
+)
 
 
 class PlannerAgent:
@@ -37,7 +42,8 @@ Return concise JSON only."""
         if self.skill_registry is not None:
             try:
                 suggested_skills = self._rank_suggested_skills(
-                    self.skill_registry.get_skills_for_query(query)
+                    self.skill_registry.get_skills_for_query(query),
+                    query=query,
                 )[:8]
             except Exception:
                 suggested_skills = []
@@ -71,9 +77,13 @@ Rules:
 - if no exact skill name is justified, return an empty list
 """
 
-    def _rank_suggested_skills(self, skill_names: List[str]) -> List[str]:
+    def _rank_suggested_skills(self, skill_names: List[str], *, query: str) -> List[str]:
         if not skill_names:
             return []
+        if is_direct_target_lookup(query=query):
+            target_lookup_ranked = prioritize_target_lookup_skills(skill_names)
+            if target_lookup_ranked:
+                skill_names = target_lookup_ranked
         if self.resource_registry is not None and hasattr(
             self.resource_registry, "prioritize_resource_names"
         ):

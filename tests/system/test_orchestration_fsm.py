@@ -431,7 +431,81 @@ def test_retriever_prioritizes_ready_remote_skills_for_fallback() -> None:
     assert "DGIdb" in updated.retrieved_text
     assert "TTD" not in updated.retrieved_text
     assert "TarKG" not in updated.retrieved_text
-    assert coder.last_skill_names == ["ChEMBL", "Open Targets Platform", "DGIdb"]
+    assert coder.last_skill_names == ["ChEMBL", "DGIdb", "Open Targets Platform"]
+
+
+def test_retriever_narrows_target_lookup_to_primary_dti_sources() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What are the known drug targets of imatinib?",
+        thinking_mode="simple",
+        query_plan=QueryPlan(
+            question_type="target_lookup",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["ChEMBL", "Molecular Targets", "DRUGMECHDB"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Prefer direct target databases."],
+        ),
+    )
+
+    class _TargetSkillStub(_AvailabilitySkillStub):
+        def __init__(self, available: bool, access_mode: str):
+            super().__init__(available)
+            self.access_mode = access_mode
+
+    class _TargetLookupRegistry(_RegistryStub):
+        def __init__(self):
+            self.skills = {
+                "ChEMBL": _TargetSkillStub(True, "CLI"),
+                "BindingDB": _TargetSkillStub(True, "REST_API"),
+                "DGIdb": _TargetSkillStub(True, "REST_API"),
+                "Open Targets Platform": _TargetSkillStub(True, "REST_API"),
+                "Molecular Targets": _TargetSkillStub(True, "REST_API"),
+                "DRUGMECHDB": _TargetSkillStub(True, "REST_API"),
+            }
+
+        def get_skills_for_query(self, query):
+            return [
+                "ChEMBL",
+                "Molecular Targets",
+                "DRUGMECHDB",
+                "BindingDB",
+                "DGIdb",
+                "Open Targets Platform",
+            ]
+
+        def get_skill(self, skill_name):
+            return self.skills.get(skill_name)
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _TargetLookupRegistry(),
+        coder_agent=coder,
+        resource_registry=_ResourceRegistryStub(
+            [
+                type("Entry", (), {"name": "ChEMBL", "status": "ready", "access_mode": "CLI"})(),
+                type("Entry", (), {"name": "BindingDB", "status": "ready", "access_mode": "REST_API"})(),
+                type("Entry", (), {"name": "DGIdb", "status": "ready", "access_mode": "REST_API"})(),
+                type("Entry", (), {"name": "Open Targets Platform", "status": "ready", "access_mode": "REST_API"})(),
+                type("Entry", (), {"name": "Molecular Targets", "status": "ready", "access_mode": "REST_API"})(),
+                type("Entry", (), {"name": "DRUGMECHDB", "status": "ready", "access_mode": "REST_API"})(),
+            ]
+        ),
+    )
+
+    updated = retriever.execute(state)
+
+    assert "BindingDB" in updated.retrieved_text
+    assert "ChEMBL" in updated.retrieved_text
+    assert "DGIdb" in updated.retrieved_text
+    assert "Molecular Targets" not in updated.retrieved_text
+    assert "DRUGMECHDB" not in updated.retrieved_text
+    assert coder.last_skill_names == ["BindingDB", "ChEMBL", "DGIdb"]
 
 
 class _NoOpAgent:

@@ -14,7 +14,12 @@ from typing import List, Dict, Any, Optional
 
 from .models import AgentState
 from .llm_client import LLMClient
-from .query_plan import QueryPlan
+from .query_plan import (
+    QueryPlan,
+    is_direct_target_lookup,
+    normalize_question_type,
+    prioritize_target_lookup_skills,
+)
 from .skills.registry import SkillRegistry
 from .agent_coder import CoderAgent
 from .evidence import build_evidence_items_for_skill
@@ -269,17 +274,13 @@ Provide your plan in JSON format:
     def _select_execution_strategy(state: AgentState) -> str:
         plan = getattr(state, "query_plan", None)
         thinking_mode = str(getattr(state, "thinking_mode", ""))
-        question_type = str(getattr(plan, "question_type", "")).strip().lower().replace("-", "_").replace(" ", "_")
         original_query = str(getattr(state, "original_query", "")).strip().lower()
         entities = getattr(plan, "entities", {}) if plan is not None else {}
         has_drug_entity = bool(getattr(entities, "get", lambda *_: [])("drug"))
-        direct_question_type = any(
-            marker in question_type
-            for marker in (
-                "target",
-                "label",
-                "retrieval",
-            )
+        question_type = normalize_question_type(getattr(plan, "question_type", ""))
+        direct_question_type = (
+            is_direct_target_lookup(query=original_query, question_type=question_type)
+            or any(marker in question_type for marker in ("label", "retrieval"))
         )
         direct_query_shape = has_drug_entity and any(
             marker in original_query
@@ -313,6 +314,11 @@ Provide your plan in JSON format:
             combined_skill_hints = list(plan.preferred_skills) + list(
                 self.skill_registry.get_skills_for_query(query)
             )
+            combined_skill_hints = self._apply_query_skill_policy(
+                combined_skill_hints,
+                query=query,
+                question_type=plan.question_type,
+            )
             selected_skills = self._filter_available_skills(combined_skill_hints)
             if selected_skills:
                 selected_skills = selected_skills[:3]
@@ -322,6 +328,20 @@ Provide your plan in JSON format:
             "selected_skills": selected_skills,
             "reasoning": "; ".join(plan.notes),
         }
+
+    @staticmethod
+    def _apply_query_skill_policy(
+        skill_names: List[str],
+        *,
+        query: str,
+        question_type: str,
+    ) -> List[str]:
+        unique_names = list(dict.fromkeys(skill_names))
+        if is_direct_target_lookup(query=query, question_type=question_type):
+            narrowed = prioritize_target_lookup_skills(unique_names)
+            if narrowed:
+                return narrowed
+        return unique_names
 
     def _filter_available_skills(self, skill_names: List[str]) -> List[str]:
         if not skill_names:

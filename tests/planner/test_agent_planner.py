@@ -218,3 +218,130 @@ def test_planner_prompt_prefers_ready_non_local_skills() -> None:
     assert "- DGIdb" in prompt
     assert "- TTD" not in prompt
     assert "- TarKG" not in prompt
+
+
+def test_planner_prompt_prioritizes_primary_dti_sources_for_target_lookup() -> None:
+    class _TargetLookupPlannerRegistryStub:
+        def get_skills_for_query(self, query):
+            return [
+                "ChEMBL",
+                "Molecular Targets",
+                "DRUGMECHDB",
+                "BindingDB",
+                "DGIdb",
+                "Open Targets Platform",
+            ]
+
+    planner = PlannerAgent(
+        _LLMStub(),
+        skill_registry=_TargetLookupPlannerRegistryStub(),
+        resource_registry=ResourceRegistry(
+            [
+                ResourceEntry(
+                    id="chembl",
+                    name="ChEMBL",
+                    category="dti",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="CLI",
+                ),
+                ResourceEntry(
+                    id="bindingdb",
+                    name="BindingDB",
+                    category="dti",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="REST_API",
+                ),
+                ResourceEntry(
+                    id="open_targets_platform",
+                    name="Open Targets Platform",
+                    category="dti",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="REST_API",
+                ),
+                ResourceEntry(
+                    id="dgidb",
+                    name="DGIdb",
+                    category="dti",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="REST_API",
+                ),
+                ResourceEntry(
+                    id="molecular_targets",
+                    name="Molecular Targets",
+                    category="dti",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="REST_API",
+                ),
+                ResourceEntry(
+                    id="drugmechdb",
+                    name="DRUGMECHDB",
+                    category="drug_mechanism",
+                    description="",
+                    entrypoint="",
+                    enabled=True,
+                    requires_metadata=False,
+                    required_metadata_paths=[],
+                    required_dependencies=[],
+                    supports_code_generation=True,
+                    fallback_retrieve_supported=True,
+                    status="ready",
+                    status_reason="available",
+                    access_mode="REST_API",
+                ),
+            ]
+        ),
+    )
+
+    prompt = planner.get_planning_prompt("What are the known drug targets of imatinib?")
+
+    assert "- BindingDB" in prompt
+    assert "- ChEMBL" in prompt
+    assert "- DGIdb" in prompt
+    assert "- Open Targets Platform" in prompt
+    assert "- Molecular Targets" not in prompt
+    assert "- DRUGMECHDB" not in prompt

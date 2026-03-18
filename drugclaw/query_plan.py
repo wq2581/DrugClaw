@@ -4,6 +4,24 @@ from dataclasses import asdict, dataclass, field
 from typing import Dict, List
 
 
+PRIMARY_TARGET_LOOKUP_SKILLS = (
+    "BindingDB",
+    "ChEMBL",
+    "DGIdb",
+    "Open Targets Platform",
+    "DrugBank",
+    "TTD",
+    "STITCH",
+)
+
+SECONDARY_TARGET_LOOKUP_SKILLS = (
+    "Molecular Targets",
+    "Molecular Targets Data",
+    "TarKG",
+    "DRUGMECHDB",
+)
+
+
 @dataclass
 class QueryPlan:
     question_type: str
@@ -34,3 +52,60 @@ def build_fallback_query_plan(query: str) -> QueryPlan:
         answer_risk_level="medium",
         notes=["Fallback plan used because planner output was unavailable or invalid."],
     )
+
+
+def normalize_question_type(value: str) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def is_direct_target_lookup(*, query: str = "", question_type: str = "") -> bool:
+    normalized_type = normalize_question_type(question_type)
+    if any(
+        marker in normalized_type
+        for marker in (
+            "target_lookup",
+            "drug_target_interaction",
+            "drug_target_identification",
+            "relationship_retrieval",
+        )
+    ):
+        return True
+
+    lowered_query = str(query).strip().lower()
+    if not lowered_query:
+        return False
+
+    return any(
+        marker in lowered_query
+        for marker in (
+            "drug target",
+            "drug targets",
+            "known target",
+            "known targets",
+            "target of",
+            "targets of",
+        )
+    )
+
+
+def prioritize_target_lookup_skills(skill_names: List[str]) -> List[str]:
+    unique_names = list(dict.fromkeys(skill_names))
+    if not unique_names:
+        return []
+
+    primary = [name for name in PRIMARY_TARGET_LOOKUP_SKILLS if name in unique_names]
+    secondary = [name for name in SECONDARY_TARGET_LOOKUP_SKILLS if name in unique_names]
+    remainder = [
+        name
+        for name in unique_names
+        if name not in primary and name not in secondary
+    ]
+
+    # For direct target lookup, keep first-line DTI sources exclusive when the
+    # runtime has enough of them. Fall back to broader/specialized sources only
+    # when the primary set is sparse.
+    if len(primary) >= 3:
+        return primary
+    if primary:
+        return primary + secondary + remainder
+    return secondary + remainder
