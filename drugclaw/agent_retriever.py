@@ -161,6 +161,7 @@ Provide your plan in JSON format:
         if isinstance(planner_output, QueryPlan):
             query_plan = self._query_plan_to_retrieval_plan(
                 planner_output,
+                query=state.original_query,
                 resource_filter=resource_filter,
             )
         elif resource_filter:
@@ -188,15 +189,7 @@ Provide your plan in JSON format:
         print(f"[Retriever Agent] Key entities: {key_entities}")
 
         # Normalize entities for Code Agent
-        entities: Dict[str, List[str]] = {}
-        for etype in ("drugs", "genes", "diseases", "pathways", "other"):
-            vals = key_entities.get(etype, [])
-            if isinstance(vals, str):
-                vals = [vals]
-            if vals:
-                # Map plural to singular for consistency
-                singular = etype.rstrip("s") if etype != "other" else "other"
-                entities[singular] = vals
+        entities = self._normalize_entities_for_coder(key_entities)
 
         # Delegate to Code Agent
         coder_result = self.coder.generate_and_execute(
@@ -268,11 +261,16 @@ Provide your plan in JSON format:
     def _query_plan_to_retrieval_plan(
         self,
         plan: QueryPlan,
+        query: str,
         *,
         resource_filter: List[str],
     ) -> Dict[str, Any]:
         selected_skills = list(resource_filter or plan.preferred_skills)
         selected_skills = self._filter_available_skills(selected_skills)
+        if not selected_skills and not resource_filter:
+            selected_skills = self._filter_available_skills(
+                self.skill_registry.get_skills_for_query(query)[:3]
+            )
 
         return {
             "key_entities": dict(plan.entities),
@@ -294,7 +292,39 @@ Provide your plan in JSON format:
             if skill is not None:
                 available.append(skill_name)
 
-        return available or list(skill_names)
+        return available
+
+    @staticmethod
+    def _normalize_entities_for_coder(
+        key_entities: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        singular_map = {
+            "drug": "drug",
+            "drugs": "drug",
+            "gene": "gene",
+            "genes": "gene",
+            "disease": "disease",
+            "diseases": "disease",
+            "pathway": "pathway",
+            "pathways": "pathway",
+            "other": "other",
+        }
+        entities: Dict[str, List[str]] = {}
+        for raw_key, raw_vals in key_entities.items():
+            canonical = singular_map.get(str(raw_key).lower())
+            if canonical is None:
+                continue
+
+            vals = raw_vals
+            if isinstance(vals, str):
+                vals = [vals]
+            if not isinstance(vals, list):
+                continue
+
+            cleaned = [str(value).strip() for value in vals if str(value).strip()]
+            if cleaned:
+                entities[canonical] = cleaned
+        return entities
 
     def _get_query_plan(
         self, query: str, omics_str: str, iteration: int,

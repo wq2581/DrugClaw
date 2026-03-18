@@ -12,7 +12,13 @@ class _PlannerBypassLLMStub:
 
 
 class _CoderStub:
+    def __init__(self):
+        self.last_entities = None
+        self.last_skill_names = None
+
     def generate_and_execute(self, skill_names, entities, query, max_results_per_skill=30):
+        self.last_entities = entities
+        self.last_skill_names = skill_names
         per_skill = {}
         for skill_name in skill_names:
             per_skill[skill_name] = {
@@ -38,6 +44,20 @@ class _RegistryStub:
         return "stub tree"
 
 
+class _SelectiveRegistryStub(_RegistryStub):
+    def __init__(self, valid_skills):
+        self.valid_skills = list(valid_skills)
+        self._valid_skill_set = set(valid_skills)
+
+    def get_skills_for_query(self, query):
+        return list(self.valid_skills)
+
+    def get_skill(self, skill_name):
+        if skill_name in self._valid_skill_set:
+            return object()
+        return None
+
+
 def test_retriever_consumes_query_plan_when_present() -> None:
     state = AgentState(
         original_query="What does imatinib target?",
@@ -57,7 +77,7 @@ def test_retriever_consumes_query_plan_when_present() -> None:
 
     retriever = RetrieverAgent(
         _PlannerBypassLLMStub(),
-        _RegistryStub(),
+        _SelectiveRegistryStub(["BindingDB", "ChEMBL"]),
         coder_agent=_CoderStub(),
     )
 
@@ -87,7 +107,7 @@ def test_retriever_prefers_resource_filter_over_query_plan_hints() -> None:
 
     retriever = RetrieverAgent(
         _PlannerBypassLLMStub(),
-        _RegistryStub(),
+        _SelectiveRegistryStub(["DrugBank", "BindingDB"]),
         coder_agent=_CoderStub(),
     )
 
@@ -95,6 +115,70 @@ def test_retriever_prefers_resource_filter_over_query_plan_hints() -> None:
 
     assert "DrugBank" in updated.retrieved_text
     assert "BindingDB" not in updated.retrieved_text
+
+
+def test_retriever_falls_back_to_registry_skills_when_plan_hints_are_invalid() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What does imatinib target?",
+        query_plan=QueryPlan(
+            question_type="target_lookup",
+            entities={"drug": ["imatinib"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=[
+                "drug_target_retrieval",
+                "pharmacological_profiling",
+                "biochemical_pathway_analysis",
+            ],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Use direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["BindingDB", "ChEMBL"]),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert "BindingDB" in updated.retrieved_text or "ChEMBL" in updated.retrieved_text
+    assert "drug_target_retrieval" not in updated.retrieved_text
+    assert coder.last_skill_names == ["BindingDB", "ChEMBL"]
+
+
+def test_retriever_normalizes_singular_entity_keys_from_query_plan() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What does imatinib target?",
+        query_plan=QueryPlan(
+            question_type="target_lookup",
+            entities={"drug": ["imatinib"], "gene": ["ABL1"]},
+            subquestions=["What are the known targets of imatinib?"],
+            preferred_skills=["BindingDB"],
+            preferred_evidence_types=["database_record"],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Use direct target databases."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["BindingDB"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_entities == {"drug": ["imatinib"], "gene": ["ABL1"]}
 
 
 class _NoOpAgent:

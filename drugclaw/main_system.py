@@ -90,7 +90,7 @@ class DrugClawSystem:
         _web_skill = self.skill_registry.get_skill("WebSearch")
 
         # Agents
-        self.planner = PlannerAgent(self.llm_client)
+        self.planner = PlannerAgent(self.llm_client, self.skill_registry)
         self.coder = CoderAgent(self.llm_client, self.skill_registry)
         self.retriever = RetrieverAgent(
             self.llm_client, self.skill_registry, coder_agent=self.coder,

@@ -8,8 +8,9 @@ from .query_plan import QueryPlan, build_fallback_query_plan
 class PlannerAgent:
     """Produce a structured retrieval plan from the raw user query."""
 
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, skill_registry=None):
         self.llm = llm_client
+        self.skill_registry = skill_registry
 
     def get_system_prompt(self) -> str:
         return """You are the Planner Agent for DrugClaw.
@@ -30,10 +31,23 @@ Return concise JSON only."""
         omics_constraints: Optional[str] = None,
     ) -> str:
         omics_text = omics_constraints or "No explicit omics constraints."
+        suggested_skills = []
+        if self.skill_registry is not None:
+            try:
+                suggested_skills = self.skill_registry.get_skills_for_query(query)[:8]
+            except Exception:
+                suggested_skills = []
+        suggestion_text = (
+            "Suggested exact runtime skill names:\n- " + "\n- ".join(suggested_skills)
+            if suggested_skills
+            else "Suggested exact runtime skill names:\n- (none available; leave preferred_skills empty if unsure)"
+        )
         return f"""User query: {query}
 
 Omics constraints:
 {omics_text}
+
+{suggestion_text}
 
 Return JSON with these fields:
 - question_type
@@ -46,6 +60,11 @@ Return JSON with these fields:
 - requires_web_fallback
 - answer_risk_level
 - notes
+
+Rules:
+- `preferred_skills` must contain exact registered runtime skill names only
+- do not invent category labels, capability names, or abstract tool names
+- if no exact skill name is justified, return an empty list
 """
 
     def plan(
