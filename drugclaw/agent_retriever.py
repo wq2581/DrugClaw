@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 
 from .models import AgentState
 from .llm_client import LLMClient
+from .query_plan import QueryPlan
 from .skills.registry import SkillRegistry
 from .agent_coder import CoderAgent
 from .evidence import build_evidence_items_for_skill
@@ -155,8 +156,14 @@ Provide your plan in JSON format:
 
         # Prepare omics constraints string
         omics_str = self._format_omics_constraints(state.omics_constraints)
+        planner_output = getattr(state, "query_plan", None)
 
-        if resource_filter:
+        if isinstance(planner_output, QueryPlan):
+            query_plan = self._query_plan_to_retrieval_plan(
+                planner_output,
+                resource_filter=resource_filter,
+            )
+        elif resource_filter:
             query_plan = self._get_query_plan_filtered(
                 state.original_query, omics_str, state.iteration, resource_filter,
             )
@@ -257,6 +264,37 @@ Provide your plan in JSON format:
         if constraints.tissue_types:
             parts.append(f"Tissues: {', '.join(constraints.tissue_types)}")
         return "\n".join(parts) if parts else "No specific constraints."
+
+    def _query_plan_to_retrieval_plan(
+        self,
+        plan: QueryPlan,
+        *,
+        resource_filter: List[str],
+    ) -> Dict[str, Any]:
+        selected_skills = list(resource_filter or plan.preferred_skills)
+        selected_skills = self._filter_available_skills(selected_skills)
+
+        return {
+            "key_entities": dict(plan.entities),
+            "selected_skills": selected_skills,
+            "reasoning": "; ".join(plan.notes),
+        }
+
+    def _filter_available_skills(self, skill_names: List[str]) -> List[str]:
+        if not skill_names:
+            return []
+
+        available: List[str] = []
+        for skill_name in skill_names:
+            try:
+                skill = self.skill_registry.get_skill(skill_name)
+            except Exception:
+                skill = None
+
+            if skill is not None:
+                available.append(skill_name)
+
+        return available or list(skill_names)
 
     def _get_query_plan(
         self, query: str, omics_str: str, iteration: int,
