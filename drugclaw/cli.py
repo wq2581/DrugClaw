@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import List
 
 from .config import Config
-from .main_system import DrugClawSystem
 from .models import ThinkingMode
 from .skills import build_default_registry
 from .resource_registry import build_resource_registry
@@ -90,6 +89,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print structured claim assessment summaries after the answer.",
     )
+    run_parser.add_argument(
+        "--debug-agents",
+        action="store_true",
+        help="Print internal agent routing and execution logs.",
+    )
+    run_parser.add_argument(
+        "--save-html-report",
+        action="store_true",
+        help="Save a local visual HTML report under query_logs/ for this custom query.",
+    )
 
     demo_parser = subparsers.add_parser(
         "demo",
@@ -121,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print structured claim assessment summaries after the answer.",
     )
+    demo_parser.add_argument(
+        "--debug-agents",
+        action="store_true",
+        help="Print internal agent routing and execution logs.",
+    )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -140,14 +154,14 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument(
         "--key-file",
         default="navigator_api_keys.json",
-        help="Path to api_keys.json or navigator_api_keys.json.",
+        help="Path to navigator_api_keys.json. Use --key-file api_keys.json to override.",
     )
 
     return parser
 
 
-def _status_line(label: str, ok: bool, detail: str) -> str:
-    status = "OK" if ok else "FAIL"
+def _status_line(label: str, ok: bool, detail: str, *, level: str | None = None) -> str:
+    status = level or ("OK" if ok else "FAIL")
     return f"[{status}] {label}: {detail}"
 
 
@@ -210,6 +224,13 @@ def _load_registry_for_cli(key_file: str, *, strict_config: bool) -> tuple[objec
     return skill_registry, resource_registry
 
 
+def _build_system(key_file: str):
+    from .main_system import DrugClawSystem
+
+    config = Config(key_file=key_file)
+    return DrugClawSystem(config)
+
+
 def _registry_summary_lines(summary: dict) -> List[str]:
     lines = [
         _status_line("registry_total_resources", True, str(summary["total_resources"])),
@@ -240,23 +261,24 @@ def _doctor_check_registry(key_file: str) -> List[str]:
 
     lines = _registry_summary_lines(resource_registry.summarize_registry())
     for entry in resource_registry.get_all_resources():
-        usable = entry.status == "ready"
         detail = (
             f"category={entry.category}; access={entry.access_mode}; "
             f"status={entry.status}; reason={entry.status_reason}"
         )
-        lines.append(_status_line(f"resource:{entry.name}", usable or not entry.enabled, detail))
+        if not entry.enabled or entry.status == "ready":
+            lines.append(_status_line(f"resource:{entry.name}", True, detail))
+            continue
+        lines.append(_status_line(f"resource:{entry.name}", False, detail, level="WARN"))
     return lines
 
 
 def _doctor_check_presets(key_file: str) -> List[str]:
     lines: List[str] = []
     try:
-        config, _ = _load_registry_for_cli(key_file, strict_config=True)
+        registry, resource_registry = _load_registry_for_cli(key_file, strict_config=True)
     except Exception as exc:
         return [_status_line("config", False, f"cannot initialize Config ({exc})")]
 
-    registry = build_default_registry(config)
     for preset_name, preset in DEMO_PRESETS.items():
         required = preset["resource_filter"]
         unavailable = []
@@ -267,32 +289,10 @@ def _doctor_check_presets(key_file: str) -> List[str]:
                 unavailable.append(skill_name)
                 details.append(f"{skill_name}=missing")
                 continue
-            access = getattr(skill, "access_mode", "unknown")
-            available = skill.is_available()
-            local_paths: List[Path] = []
-            if access in {"LOCAL_FILE", "DATASET"}:
-                for value in skill.config.values():
-                    if isinstance(value, str) and value:
-                        path = Path(value).expanduser()
-                        if not path.is_absolute():
-                            path = (Path.cwd() / path).resolve()
-                        local_paths.append(path)
-                    elif isinstance(value, dict):
-                        for nested in value.values():
-                            if isinstance(nested, str) and nested:
-                                path = Path(nested).expanduser()
-                                if not path.is_absolute():
-                                    path = (Path.cwd() / path).resolve()
-                                local_paths.append(path)
-                if local_paths:
-                    existing_paths = [path for path in local_paths if path.exists()]
-                    available = bool(existing_paths)
-                    path_note = f"{len(existing_paths)}/{len(local_paths)} files"
-                else:
-                    available = False
-                    path_note = "no local path configured"
-            else:
-                path_note = "available" if available else "unavailable"
+            entry = resource_registry.get_resource(skill_name) if resource_registry is not None else None
+            access = getattr(entry, "access_mode", getattr(skill, "access_mode", "unknown"))
+            available = bool(skill.is_available())
+            path_note = "available" if available else getattr(entry, "status_reason", "unavailable")
             if access == "CLI" and hasattr(skill, "_cli_available"):
                 cli_ok = skill._cli_available()  # type: ignore[attr-defined]
                 details.append(f"{skill_name}={access}:{'cli' if cli_ok else 'rest-fallback'}")
@@ -312,12 +312,24 @@ def _doctor_check_presets(key_file: str) -> List[str]:
 
 
 def _doctor_check_install_hint() -> List[str]:
+    current_script_dir = Path(sys.executable).expanduser().parent
+    bundled_script = any(
+        current_script_dir.joinpath(candidate).exists()
+        for candidate in ("drugclaw", "drugclaw.exe", "drugclaw-script.py")
+    )
     installed_as_script = any(
         Path(path).joinpath("drugclaw").exists()
         for path in os.environ.get("PATH", "").split(os.pathsep)
         if path
     )
-    detail = "command found on PATH" if installed_as_script else "use `python -m drugclaw ...` or `pip install -e . --no-build-isolation`"
+    installed_as_script = installed_as_script or bundled_script
+    detail = (
+        "command available for the current Python environment"
+        if bundled_script
+        else "command found on PATH"
+        if installed_as_script
+        else "use `python -m drugclaw ...` or `python -m pip install -e .[dev] --no-build-isolation`"
+    )
     return [_status_line("cli_command", installed_as_script, detail)]
 
 
@@ -424,15 +436,30 @@ def _run_query(
     show_evidence: bool = False,
     show_plan: bool = False,
     show_claims: bool = False,
+    debug_agents: bool = False,
+    save_html_report: bool = False,
 ) -> int:
-    config = Config(key_file=key_file)
-    system = DrugClawSystem(config)
+    system = _build_system(key_file)
+
+    if not debug_agents:
+        print(f"\n{'='*80}")
+        print(f"QUERY [{thinking_mode}]: {query}")
+        if resource_filter:
+            print(f"RESOURCE FILTER: {resource_filter}")
+        print(f"{'='*80}\n")
 
     result = system.query(
         query,
         thinking_mode=thinking_mode,
         resource_filter=resource_filter or [],
+        verbose=debug_agents,
+        save_html_report=save_html_report,
     )
+
+    if not debug_agents:
+        formatted_answer = result.get("formatted_answer") or result.get("answer", "")
+        print(f"\n{'='*80}\nFINAL ANSWER\n{'='*80}\n")
+        print(formatted_answer)
 
     if show_evidence:
         _print_evidence_summary(result)
@@ -440,6 +467,8 @@ def _run_query(
         _print_plan_summary(result)
     if show_claims:
         _print_claim_summary(result)
+    if result.get("html_report_path"):
+        print(f"\nHTML report saved to {result['html_report_path']}")
 
     return 0 if result.get("success") else 1
 
@@ -523,6 +552,8 @@ def main(argv: List[str] | None = None) -> int:
             show_evidence=args.show_evidence,
             show_plan=args.show_plan,
             show_claims=args.show_claims,
+            debug_agents=args.debug_agents,
+            save_html_report=args.save_html_report,
         )
 
     if args.command == "doctor":
@@ -543,4 +574,5 @@ def main(argv: List[str] | None = None) -> int:
         show_evidence=args.show_evidence,
         show_plan=args.show_plan,
         show_claims=args.show_claims,
+        debug_agents=args.debug_agents,
     )

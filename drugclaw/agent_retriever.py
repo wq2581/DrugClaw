@@ -10,11 +10,18 @@ The Retriever Agent is now focused on:
 The old _build_subgraph() is replaced by the Graph Build Agent (graph mode)
 or results go directly as text to the Responder Agent (simple mode).
 """
+import re
 from typing import List, Dict, Any, Optional
 
 from .models import AgentState
 from .llm_client import LLMClient
-from .query_plan import QueryPlan
+from .query_plan import (
+    QueryPlan,
+    build_fallback_query_plan,
+    is_direct_target_lookup,
+    normalize_question_type,
+    prioritize_target_lookup_skills,
+)
 from .skills.registry import SkillRegistry
 from .agent_coder import CoderAgent
 from .evidence import build_evidence_items_for_skill
@@ -33,10 +40,12 @@ class RetrieverAgent:
         llm_client: LLMClient,
         skill_registry: SkillRegistry,
         coder_agent: Optional[CoderAgent] = None,
+        resource_registry=None,
     ):
         self.llm = llm_client
         self.skill_registry = skill_registry
         self.coder = coder_agent or CoderAgent(llm_client, skill_registry)
+        self.resource_registry = resource_registry
 
     # ------------------------------------------------------------------
     # Prompt builders
@@ -158,14 +167,35 @@ Provide your plan in JSON format:
         omics_str = self._format_omics_constraints(state.omics_constraints)
         planner_output = getattr(state, "query_plan", None)
 
+        if (
+            isinstance(planner_output, QueryPlan)
+            and resource_filter
+            and (
+                not planner_output.entities
+                or normalize_question_type(planner_output.question_type) == "unknown"
+            )
+        ):
+            planner_output = self._build_resource_filter_query_plan(
+                state.original_query,
+                key_entities=planner_output.entities,
+                resource_filter=resource_filter,
+            )
+            state.query_plan = planner_output
+
         if isinstance(planner_output, QueryPlan):
             query_plan = self._query_plan_to_retrieval_plan(
                 planner_output,
+                query=state.original_query,
                 resource_filter=resource_filter,
             )
         elif resource_filter:
             query_plan = self._get_query_plan_filtered(
                 state.original_query, omics_str, state.iteration, resource_filter,
+            )
+            state.query_plan = self._build_resource_filter_query_plan(
+                state.original_query,
+                key_entities=query_plan.get("key_entities", {}),
+                resource_filter=resource_filter,
             )
         else:
             query_plan = self._get_query_plan(
@@ -175,6 +205,9 @@ Provide your plan in JSON format:
         # Extract info from the plan
         key_entities = query_plan.get("key_entities", {})
         selected_skills = query_plan.get("selected_skills", [])
+
+        if not self._normalize_entities_for_coder(key_entities) and isinstance(getattr(state, "query_plan", None), QueryPlan):
+            key_entities = dict(state.query_plan.entities)
 
         # Backward compat: also check query_plan list for skill names
         if not selected_skills:
@@ -188,21 +221,15 @@ Provide your plan in JSON format:
         print(f"[Retriever Agent] Key entities: {key_entities}")
 
         # Normalize entities for Code Agent
-        entities: Dict[str, List[str]] = {}
-        for etype in ("drugs", "genes", "diseases", "pathways", "other"):
-            vals = key_entities.get(etype, [])
-            if isinstance(vals, str):
-                vals = [vals]
-            if vals:
-                # Map plural to singular for consistency
-                singular = etype.rstrip("s") if etype != "other" else "other"
-                entities[singular] = vals
+        entities = self._normalize_entities_for_coder(key_entities)
+        execution_strategy = self._select_execution_strategy(state)
 
         # Delegate to Code Agent
         coder_result = self.coder.generate_and_execute(
             skill_names=selected_skills,
             entities=entities,
             query=state.original_query,
+            execution_strategy=execution_strategy,
         )
 
         # Build a combined context string with query + entities + results
@@ -230,6 +257,9 @@ Provide your plan in JSON format:
         state.retrieved_text = retrieved_text
         state.evidence_items = self._build_evidence_items(
             coder_result, selected_skills, state.original_query,
+        )
+        state.retrieval_diagnostics = self._build_retrieval_diagnostics(
+            coder_result, selected_skills,
         )
         state.code_agent_code = "\n---\n".join(
             f"# Skill: {name}\n{info.get('code', '')}"
@@ -265,14 +295,58 @@ Provide your plan in JSON format:
             parts.append(f"Tissues: {', '.join(constraints.tissue_types)}")
         return "\n".join(parts) if parts else "No specific constraints."
 
+    @staticmethod
+    def _select_execution_strategy(state: AgentState) -> str:
+        plan = getattr(state, "query_plan", None)
+        thinking_mode = str(getattr(state, "thinking_mode", ""))
+        original_query = str(getattr(state, "original_query", "")).strip().lower()
+        entities = getattr(plan, "entities", {}) if plan is not None else {}
+        has_drug_entity = bool(getattr(entities, "get", lambda *_: [])("drug"))
+        question_type = normalize_question_type(getattr(plan, "question_type", ""))
+        direct_question_type = (
+            is_direct_target_lookup(query=original_query, question_type=question_type)
+            or any(marker in question_type for marker in ("label", "retrieval"))
+        )
+        direct_query_shape = has_drug_entity and any(
+            marker in original_query
+            for marker in (
+                "target",
+                "targets",
+                "label",
+                "prescribing",
+                "information",
+            )
+        )
+        if (
+            thinking_mode == "simple"
+            and plan is not None
+            and (direct_question_type or direct_query_shape)
+            and not getattr(plan, "requires_graph_reasoning", False)
+        ):
+            return "direct_retrieve"
+        return "auto"
+
     def _query_plan_to_retrieval_plan(
         self,
         plan: QueryPlan,
+        query: str,
         *,
         resource_filter: List[str],
     ) -> Dict[str, Any]:
-        selected_skills = list(resource_filter or plan.preferred_skills)
-        selected_skills = self._filter_available_skills(selected_skills)
+        if resource_filter:
+            selected_skills = self._filter_available_skills(list(resource_filter))
+        else:
+            combined_skill_hints = list(plan.preferred_skills) + list(
+                self.skill_registry.get_skills_for_query(query)
+            )
+            combined_skill_hints = self._apply_query_skill_policy(
+                combined_skill_hints,
+                query=query,
+                question_type=plan.question_type,
+            )
+            selected_skills = self._filter_available_skills(combined_skill_hints)
+            if selected_skills:
+                selected_skills = selected_skills[:3]
 
         return {
             "key_entities": dict(plan.entities),
@@ -280,10 +354,29 @@ Provide your plan in JSON format:
             "reasoning": "; ".join(plan.notes),
         }
 
+    @staticmethod
+    def _apply_query_skill_policy(
+        skill_names: List[str],
+        *,
+        query: str,
+        question_type: str,
+    ) -> List[str]:
+        unique_names = list(dict.fromkeys(skill_names))
+        if is_direct_target_lookup(query=query, question_type=question_type):
+            narrowed = prioritize_target_lookup_skills(unique_names)
+            if narrowed:
+                return narrowed
+        return unique_names
+
     def _filter_available_skills(self, skill_names: List[str]) -> List[str]:
         if not skill_names:
             return []
 
+        prioritized = self._prioritize_skill_names(skill_names, ready_only=True)
+        if prioritized:
+            return prioritized
+
+        skill_names = self._prioritize_skill_names(skill_names, ready_only=False)
         available: List[str] = []
         for skill_name in skill_names:
             try:
@@ -291,10 +384,108 @@ Provide your plan in JSON format:
             except Exception:
                 skill = None
 
-            if skill is not None:
+            if skill is None:
+                continue
+
+            try:
+                is_available = skill.is_available() if hasattr(skill, "is_available") else True
+            except Exception:
+                is_available = False
+
+            if is_available:
                 available.append(skill_name)
 
-        return available or list(skill_names)
+        return available
+
+    def _prioritize_skill_names(
+        self,
+        skill_names: List[str],
+        *,
+        ready_only: bool,
+    ) -> List[str]:
+        unique_names = list(dict.fromkeys(skill_names))
+        if not unique_names or self.resource_registry is None:
+            return unique_names if not ready_only else []
+
+        if hasattr(self.resource_registry, "prioritize_resource_names"):
+            ranked = self.resource_registry.prioritize_resource_names(
+                unique_names,
+                ready_only=ready_only,
+            )
+            if ranked:
+                return ranked
+
+        ranked = []
+        for index, skill_name in enumerate(unique_names):
+            entry = getattr(self.resource_registry, "get_resource", lambda _: None)(skill_name)
+            if entry is None:
+                continue
+            status = getattr(entry, "status", "")
+            access_mode = getattr(entry, "access_mode", "")
+            if ready_only and status != "ready":
+                continue
+            ranked.append(
+                (
+                    self._status_priority(status),
+                    self._access_priority(access_mode),
+                    index,
+                    skill_name,
+                )
+            )
+        return [name for _, _, _, name in sorted(ranked)]
+
+    @staticmethod
+    def _status_priority(status: str) -> int:
+        order = {
+            "ready": 0,
+            "degraded": 1,
+            "missing_dependency": 2,
+            "missing_metadata": 3,
+            "disabled": 4,
+        }
+        return order.get(status, 99)
+
+    @staticmethod
+    def _access_priority(access_mode: str) -> int:
+        order = {
+            "REST_API": 0,
+            "CLI": 0,
+            "LOCAL_FILE": 1,
+            "DATASET": 2,
+        }
+        return order.get(access_mode, 3)
+
+    @staticmethod
+    def _normalize_entities_for_coder(
+        key_entities: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        singular_map = {
+            "drug": "drug",
+            "drugs": "drug",
+            "gene": "gene",
+            "genes": "gene",
+            "disease": "disease",
+            "diseases": "disease",
+            "pathway": "pathway",
+            "pathways": "pathway",
+            "other": "other",
+        }
+        entities: Dict[str, List[str]] = {}
+        for raw_key, raw_vals in key_entities.items():
+            canonical = singular_map.get(str(raw_key).lower())
+            if canonical is None:
+                continue
+
+            vals = raw_vals
+            if isinstance(vals, str):
+                vals = [vals]
+            if not isinstance(vals, list):
+                continue
+
+            cleaned = [str(value).strip() for value in vals if str(value).strip()]
+            if cleaned:
+                entities[canonical] = cleaned
+        return entities
 
     def _get_query_plan(
         self, query: str, omics_str: str, iteration: int,
@@ -338,13 +529,67 @@ Respond in JSON:
         try:
             entities = self.llm.generate_json([{"role": "user", "content": entity_prompt}])
         except Exception:
-            entities = {"drugs": [], "genes": [], "diseases": [], "pathways": []}
+            entities = self._infer_entities_from_query(query)
 
         return {
             "key_entities": entities,
             "selected_skills": resource_filter,
             "reasoning": f"resource_filter active: using {resource_filter}",
         }
+
+    def _build_resource_filter_query_plan(
+        self,
+        query: str,
+        *,
+        key_entities: Dict[str, Any],
+        resource_filter: List[str],
+    ) -> QueryPlan:
+        fallback = build_fallback_query_plan(query)
+        entities = self._normalize_entities_for_coder(key_entities)
+        if not entities:
+            entities = self._infer_entities_from_query(query)
+        question_type = self._infer_question_type_from_query(query)
+        return QueryPlan(
+            question_type=question_type or fallback.question_type,
+            entities=entities,
+            subquestions=[query] if query else [],
+            preferred_skills=list(resource_filter),
+            preferred_evidence_types=[],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="high" if question_type == "labeling" else fallback.answer_risk_level,
+            notes=[f"resource_filter active: using {resource_filter}"],
+        )
+
+    @staticmethod
+    def _infer_question_type_from_query(query: str) -> str:
+        lowered = str(query).strip().lower()
+        if not lowered:
+            return "unknown"
+        if any(marker in lowered for marker in ("prescribing", "label", "safety", "warning", "contraindication")):
+            return "labeling"
+        if is_direct_target_lookup(query=lowered):
+            return "target_lookup"
+        return "unknown"
+
+    @staticmethod
+    def _infer_entities_from_query(query: str) -> Dict[str, List[str]]:
+        lowered = str(query).strip().lower()
+        if not lowered:
+            return {}
+
+        for pattern in (
+            r"information\s+is\s+available\s+for\s+([a-z0-9\-]+)",
+            r"available\s+for\s+([a-z0-9\-]+)",
+            r"targets?\s+of\s+([a-z0-9\-]+)",
+            r"does\s+([a-z0-9\-]+)\s+target",
+            r"about\s+([a-z0-9\-]+)$",
+        ):
+            match = re.search(pattern, lowered)
+            if match:
+                return {"drug": [match.group(1)]}
+        return {}
 
     @staticmethod
     def _text_to_retrieved_content(
@@ -393,6 +638,25 @@ Respond in JSON:
                 )
             )
         return items
+
+    @staticmethod
+    def _build_retrieval_diagnostics(
+        coder_result: Dict[str, Any],
+        skill_names: List[str],
+    ) -> List[Dict[str, Any]]:
+        diagnostics: List[Dict[str, Any]] = []
+        for skill_name in skill_names:
+            info = coder_result.get("per_skill", {}).get(skill_name, {})
+            diagnostics.append(
+                {
+                    "skill": skill_name,
+                    "strategy": info.get("strategy", ""),
+                    "error": info.get("error", ""),
+                    "records": len(info.get("records", []) or []),
+                    "output": info.get("output", ""),
+                }
+            )
+        return diagnostics
 
     @staticmethod
     def _evidence_items_to_retrieved_content(evidence_items) -> List[Dict[str, Any]]:

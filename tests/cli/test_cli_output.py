@@ -6,12 +6,23 @@ def test_run_query_does_not_print_answer_twice(monkeypatch, capsys) -> None:
         def __init__(self, config):
             self.config = config
 
-        def query(self, query, thinking_mode, resource_filter):
-            print("only-once")
-            return {"answer": "only-once", "success": True}
+        def query(
+            self,
+            query,
+            thinking_mode,
+            resource_filter,
+            verbose=True,
+            save_html_report=False,
+        ):
+            assert verbose is False
+            assert save_html_report is False
+            return {
+                "answer": "only-once",
+                "formatted_answer": "only-once",
+                "success": True,
+            }
 
-    monkeypatch.setattr(cli, "DrugClawSystem", FakeSystem)
-    monkeypatch.setattr(cli, "Config", lambda key_file: object())
+    monkeypatch.setattr(cli, "_build_system", lambda key_file: FakeSystem(object()))
 
     exit_code = cli._run_query(
         query="demo",
@@ -31,10 +42,19 @@ def test_run_query_can_print_structured_evidence_summary(monkeypatch, capsys) ->
         def __init__(self, config):
             self.config = config
 
-        def query(self, query, thinking_mode, resource_filter):
-            print("answer-once")
+        def query(
+            self,
+            query,
+            thinking_mode,
+            resource_filter,
+            verbose=True,
+            save_html_report=False,
+        ):
+            assert verbose is False
+            assert save_html_report is False
             return {
                 "answer": "answer-once",
+                "formatted_answer": "answer-once",
                 "success": True,
                 "final_answer_structured": {
                     "summary_confidence": 0.75,
@@ -50,8 +70,7 @@ def test_run_query_can_print_structured_evidence_summary(monkeypatch, capsys) ->
                 },
             }
 
-    monkeypatch.setattr(cli, "DrugClawSystem", FakeSystem)
-    monkeypatch.setattr(cli, "Config", lambda key_file: object())
+    monkeypatch.setattr(cli, "_build_system", lambda key_file: FakeSystem(object()))
 
     exit_code = cli._run_query(
         query="demo",
@@ -73,10 +92,19 @@ def test_run_query_can_print_plan_and_claim_summaries(monkeypatch, capsys) -> No
         def __init__(self, config):
             self.config = config
 
-        def query(self, query, thinking_mode, resource_filter):
-            print("answer-once")
+        def query(
+            self,
+            query,
+            thinking_mode,
+            resource_filter,
+            verbose=True,
+            save_html_report=False,
+        ):
+            assert verbose is False
+            assert save_html_report is False
             return {
                 "answer": "answer-once",
+                "formatted_answer": "answer-once",
                 "success": True,
                 "query_plan": {
                     "question_type": "target_lookup",
@@ -95,8 +123,7 @@ def test_run_query_can_print_plan_and_claim_summaries(monkeypatch, capsys) -> No
                 "graph_decision_reason": "skip:planner did not recommend graph reasoning",
             }
 
-    monkeypatch.setattr(cli, "DrugClawSystem", FakeSystem)
-    monkeypatch.setattr(cli, "Config", lambda key_file: object())
+    monkeypatch.setattr(cli, "_build_system", lambda key_file: FakeSystem(object()))
 
     exit_code = cli._run_query(
         query="demo",
@@ -115,3 +142,89 @@ def test_run_query_can_print_plan_and_claim_summaries(monkeypatch, capsys) -> No
     assert "preferred_skills=BindingDB, ChEMBL" in captured.out
     assert "verdict=supported" in captured.out
     assert "graph_decision_reason=skip:planner did not recommend graph reasoning" in captured.out
+
+
+def test_run_query_can_enable_agent_debug_output(monkeypatch, capsys) -> None:
+    class FakeSystem:
+        def __init__(self, config):
+            self.config = config
+
+        def query(
+            self,
+            query,
+            thinking_mode,
+            resource_filter,
+            verbose=True,
+            save_html_report=False,
+        ):
+            assert verbose is True
+            assert save_html_report is False
+            print("[Retriever Agent] debug log")
+            return {
+                "answer": "answer-once",
+                "formatted_answer": "answer-once",
+                "success": True,
+            }
+
+    monkeypatch.setattr(cli, "_build_system", lambda key_file: FakeSystem(object()))
+
+    exit_code = cli._run_query(
+        query="demo",
+        thinking_mode="simple",
+        key_file="navigator_api_keys.json",
+        resource_filter=["BindingDB"],
+        debug_agents=True,
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[Retriever Agent] debug log" in captured.out
+
+
+def test_run_query_can_print_saved_html_report_path(monkeypatch, capsys) -> None:
+    class FakeSystem:
+        def __init__(self, config):
+            self.config = config
+
+        def query(
+            self,
+            query,
+            thinking_mode,
+            resource_filter,
+            verbose=True,
+            save_html_report=False,
+        ):
+            assert verbose is False
+            assert save_html_report is True
+            return {
+                "answer": "answer-once",
+                "formatted_answer": "answer-once",
+                "success": True,
+                "html_report_path": "query_logs/query_1/report.html",
+            }
+
+    monkeypatch.setattr(cli, "_build_system", lambda key_file: FakeSystem(object()))
+
+    exit_code = cli._run_query(
+        query="demo",
+        thinking_mode="simple",
+        key_file="navigator_api_keys.json",
+        resource_filter=["BindingDB"],
+        save_html_report=True,
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "HTML report saved to query_logs/query_1/report.html" in captured.out
+
+
+def test_run_parser_accepts_save_html_report_flag() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        ["run", "--query", "What does imatinib target?", "--save-html-report"]
+    )
+
+    assert args.save_html_report is True

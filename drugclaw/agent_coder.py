@@ -237,6 +237,7 @@ Return ONLY Python code."""
         entities: Dict[str, List[str]],
         query: str,
         max_results_per_skill: int = 30,
+        execution_strategy: str = "auto",
     ) -> Dict[str, Any]:
         """
         Generate and execute query code for each skill.
@@ -249,26 +250,35 @@ Return ONLY Python code."""
         per_skill: Dict[str, Dict[str, Any]] = {}
 
         for skill_name in skill_names:
-            print(f"[Code Agent] Generating code for skill: {skill_name}")
-
-            # Try the code-generation path first
-            skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
-            query_plan, code, output, error, records = self._generate_and_run_for_skill(
-                skill_name, skill_info, entities, query, max_results_per_skill,
-            )
-            strategy = "constrained_code"
-
-            if error:
-                # Constrained code path failed — fallback to direct skill.retrieve()
-                print(f"[Code Agent] Code execution failed for {skill_name}, "
-                      f"falling back to skill.retrieve()")
-                fallback_output, fallback_error, records = self._fallback_retrieve(
+            query_plan = ""
+            if execution_strategy == "direct_retrieve":
+                print(f"[Code Agent] Direct retrieve for skill: {skill_name}")
+                output, error, records = self._fallback_retrieve(
                     skill_name, entities, query, max_results_per_skill,
                 )
-                output = fallback_output
-                error = fallback_error
-                code = "(fallback: skill.retrieve())"
-                strategy = "fallback_retrieve"
+                code = "(direct: skill.retrieve())"
+                strategy = "direct_retrieve"
+            else:
+                print(f"[Code Agent] Generating code for skill: {skill_name}")
+
+                # Try the code-generation path first
+                skill_info = self.skill_registry.get_skill_info_for_coder(skill_name)
+                query_plan, code, output, error, records = self._generate_and_run_for_skill(
+                    skill_name, skill_info, entities, query, max_results_per_skill,
+                )
+                strategy = "constrained_code"
+
+                if error:
+                    # Constrained code path failed — fallback to direct skill.retrieve()
+                    print(f"[Code Agent] Code execution failed for {skill_name}, "
+                          f"falling back to skill.retrieve()")
+                    fallback_output, fallback_error, records = self._fallback_retrieve(
+                        skill_name, entities, query, max_results_per_skill,
+                    )
+                    output = fallback_output
+                    error = fallback_error
+                    code = "(fallback: skill.retrieve())"
+                    strategy = "fallback_retrieve"
 
             per_skill[skill_name] = {
                 "plan": query_plan,
