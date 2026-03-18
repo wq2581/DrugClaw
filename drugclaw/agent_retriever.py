@@ -16,13 +16,14 @@ from .models import AgentState
 from .llm_client import LLMClient
 from .skills.registry import SkillRegistry
 from .agent_coder import CoderAgent
+from .evidence import build_evidence_items_for_skill
 
 
 class RetrieverAgent:
     """
     Agent responsible for selecting skills and orchestrating retrieval.
 
-    Uses LLM to navigate the 15-subcategory skill tree, then hands off
+    Uses LLM to navigate the runtime skill tree, then hands off
     to the Code Agent for actual querying.  Results come back as text.
     """
 
@@ -43,7 +44,7 @@ class RetrieverAgent:
     def get_system_prompt(self) -> str:
         """System prompt for skill selection."""
         tree_ctx = self.skill_registry.skill_tree_prompt
-        return f"""You are the Retriever Agent of DrugClaw — a drug-specialized agentic RAG system covering 68 curated drug knowledge resources across 15 subcategories (DTI, ADR, DDI, drug mechanisms, pharmacogenomics, drug ontology, drug labeling, drug repurposing, drug toxicity, drug combinations, drug molecular properties, drug-disease associations, drug knowledge bases, drug reviews, and drug NLP datasets).
+        return f"""You are the Retriever Agent of DrugClaw — a drug-specialized agentic RAG system grounded in the current runtime resource registry across 15 subcategories (DTI, ADR, DDI, drug mechanisms, pharmacogenomics, drug ontology, drug labeling, drug repurposing, drug toxicity, drug combinations, drug molecular properties, drug-disease associations, drug knowledge bases, drug reviews, and drug NLP datasets).
 
 Your role is to:
 1. Analyze the user's drug-related query
@@ -220,19 +221,22 @@ Provide your plan in JSON format:
         # Update state
         state.current_query_entities = key_entities
         state.retrieved_text = retrieved_text
+        state.evidence_items = self._build_evidence_items(
+            coder_result, selected_skills, state.original_query,
+        )
         state.code_agent_code = "\n---\n".join(
             f"# Skill: {name}\n{info.get('code', '')}"
             for name, info in coder_result.get("per_skill", {}).items()
         )
 
         # Also populate retrieved_content for backward compat (flat list)
-        # Parse from coder results if needed
-        state.retrieved_content = self._text_to_retrieved_content(
-            coder_result, selected_skills,
-        )
+        state.retrieved_content = self._evidence_items_to_retrieved_content(
+            state.evidence_items
+        ) or self._text_to_retrieved_content(coder_result, selected_skills)
 
         print(f"[Retriever Agent] Retrieved {len(retrieved_text)} chars of text")
         print(f"[Retriever Agent] {len(state.retrieved_content)} backward-compat records")
+        print(f"[Retriever Agent] {len(state.evidence_items)} structured evidence items")
 
         return state
 
@@ -329,4 +333,43 @@ Respond in JSON:
                     "evidence_text": output[:2000],
                     "skill_category": "",
                 })
+        return records
+
+    def _build_evidence_items(
+        self,
+        coder_result: Dict[str, Any],
+        skill_names: List[str],
+        query: str,
+    ) -> List[Dict[str, Any]]:
+        items = []
+        for skill_name in skill_names:
+            skill = self.skill_registry.get_skill(skill_name)
+            info = coder_result.get("per_skill", {}).get(skill_name, {})
+            records = info.get("records", []) or []
+            items.extend(
+                build_evidence_items_for_skill(
+                    skill_name=skill_name,
+                    records=records,
+                    query=query,
+                    skill=skill,
+                )
+            )
+        return items
+
+    @staticmethod
+    def _evidence_items_to_retrieved_content(evidence_items) -> List[Dict[str, Any]]:
+        records = []
+        for item in evidence_items:
+            records.append({
+                "source": item.source_skill,
+                "source_entity": "",
+                "source_type": item.source_type,
+                "target_entity": "",
+                "target_type": "",
+                "relationship": item.claim,
+                "weight": 1.0,
+                "evidence_text": item.snippet,
+                "skill_category": item.metadata.get("skill_category", ""),
+                "sources": [item.source_locator] if item.source_locator else [],
+            })
         return records

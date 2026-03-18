@@ -44,6 +44,7 @@ from .agent_reflector import ReflectorAgent
 from .agent_websearch import WebSearchAgent
 from .query_logger import QueryLogger, QuerySession
 from .response_formatter import wrap_answer_card
+from .resource_registry import build_resource_registry
 
 
 class DrugClawSystem:
@@ -51,11 +52,10 @@ class DrugClawSystem:
     Main orchestration system for drug-specialised agentic RAG.
     Uses LangGraph to manage the multi-agent workflow.
 
-    The RAG retrieval layer is powered by a SkillRegistry that aggregates
-    results from 68 curated drug knowledge sources (+ WebSearchSkill) across
-    15 subcategories.  Retrieval is now handled by a Code Agent that writes
-    custom query code per skill, and graph construction is done by an LLM-driven
-    Graph Build Agent.
+    The RAG retrieval layer is powered by a SkillRegistry plus a resource
+    registry summary that expose the current runtime resource set and status.
+    Retrieval is handled by a Code Agent that writes custom query code per
+    skill, and graph construction is done by an LLM-driven Graph Build Agent.
     """
 
     def __init__(
@@ -74,11 +74,13 @@ class DrugClawSystem:
         # LLM
         self.llm_client = LLMClient(config)
 
-        # Skill registry (68 drug resources + WebSearchSkill)
+        # Runtime skill registry; the resource registry derives authoritative
+        # counts and status from this runtime view.
         self.skill_registry = (
             skill_registry if skill_registry is not None
             else build_default_registry(self.config)
         )
+        self.resource_registry = build_resource_registry(self.skill_registry)
         # Backward-compat alias
         self.kg_manager = self.skill_registry
 
@@ -247,6 +249,11 @@ class DrugClawSystem:
         state.final_answer = state.current_answer
         # Store raw answer for the formatter (used during logging)
         state.metadata = getattr(state, "metadata", {})
+        if state.final_answer_structured is None and state.evidence_items:
+            state.final_answer_structured = self.responder._build_final_answer(
+                state.original_query,
+                state.evidence_items,
+            )
         return state
 
     # ------------------------------------------------------------------
@@ -297,6 +304,7 @@ class DrugClawSystem:
             final = self.workflow.invoke(initial_state)
 
             final_answer    = final.get("final_answer", final.get("current_answer", ""))
+            final_answer_structured = final.get("final_answer_structured")
             iteration       = final.get("iteration", 0)
             current_reward  = final.get("current_reward", 0.0)
             reasoning_steps = final.get("reasoning_steps", [])
@@ -306,6 +314,11 @@ class DrugClawSystem:
             result = {
                 "query":              query,
                 "answer":             final_answer,
+                "final_answer_structured": (
+                    final_answer_structured.to_dict()
+                    if hasattr(final_answer_structured, "to_dict")
+                    else final_answer_structured
+                ),
                 "mode":               thinking_mode,
                 "resource_filter":    resource_filter or [],
                 "iterations":         iteration,
@@ -321,6 +334,10 @@ class DrugClawSystem:
                     for s in reasoning_steps
                 ],
                 "retrieved_content":  final.get("retrieved_content", []),
+                "evidence_items": [
+                    item.to_dict() if hasattr(item, "to_dict") else item
+                    for item in final.get("evidence_items", [])
+                ],
                 "retrieved_text":     final.get("retrieved_text", ""),
                 "reflection_feedback": final.get("reflection_feedback", ""),
                 "web_search_results": final.get("web_search_results", []),
