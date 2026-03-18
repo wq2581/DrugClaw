@@ -370,6 +370,116 @@ def test_retriever_prefers_direct_retrieve_for_simple_relationship_retrieval_tar
     assert coder.last_execution_strategy == "direct_retrieve"
 
 
+def test_retriever_resource_filter_infers_entities_for_label_query() -> None:
+    class _EntityExtractionFailLLM:
+        def generate_json(self, messages, temperature=0.3):
+            raise ValueError("entity extraction unavailable")
+
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What prescribing and safety information is available for metformin?",
+        thinking_mode="simple",
+        resource_filter=["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"],
+    )
+
+    retriever = RetrieverAgent(
+        _EntityExtractionFailLLM(),
+        _SelectiveRegistryStub(["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"]),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert updated.current_query_entities == {"drug": ["metformin"]}
+    assert coder.last_entities == {"drug": ["metformin"]}
+
+
+def test_retriever_resource_filter_uses_direct_retrieve_for_simple_label_query() -> None:
+    class _EntityExtractionFailLLM:
+        def generate_json(self, messages, temperature=0.3):
+            raise ValueError("entity extraction unavailable")
+
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What prescribing and safety information is available for metformin?",
+        thinking_mode="simple",
+        resource_filter=["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"],
+    )
+
+    retriever = RetrieverAgent(
+        _EntityExtractionFailLLM(),
+        _SelectiveRegistryStub(["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"]),
+        coder_agent=coder,
+    )
+
+    retriever.execute(state)
+
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
+def test_retriever_resource_filter_reuses_fallback_query_plan_entities_when_llm_returns_empty() -> None:
+    class _EmptyEntityLLM:
+        def generate_json(self, messages, temperature=0.3):
+            return {"drugs": [], "genes": [], "diseases": [], "pathways": []}
+
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What prescribing and safety information is available for metformin?",
+        thinking_mode="simple",
+        resource_filter=["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"],
+    )
+
+    retriever = RetrieverAgent(
+        _EmptyEntityLLM(),
+        _SelectiveRegistryStub(["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"]),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert updated.query_plan is not None
+    assert updated.query_plan.entities == {"drug": ["metformin"]}
+    assert updated.current_query_entities == {"drug": ["metformin"]}
+    assert coder.last_entities == {"drug": ["metformin"]}
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
+def test_retriever_enriches_empty_planner_query_plan_when_resource_filter_is_present() -> None:
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What prescribing and safety information is available for metformin?",
+        thinking_mode="simple",
+        resource_filter=["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"],
+        query_plan=QueryPlan(
+            question_type="unknown",
+            entities={},
+            subquestions=["What prescribing and safety information is available for metformin?"],
+            preferred_skills=[],
+            preferred_evidence_types=[],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="medium",
+            notes=["Fallback plan used because planner output was unavailable or invalid."],
+        ),
+    )
+
+    retriever = RetrieverAgent(
+        _PlannerBypassLLMStub(),
+        _SelectiveRegistryStub(["DailyMed", "openFDA Human Drug", "MedlinePlus Drug Info"]),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert updated.query_plan is not None
+    assert updated.query_plan.question_type == "labeling"
+    assert updated.query_plan.entities == {"drug": ["metformin"]}
+    assert updated.current_query_entities == {"drug": ["metformin"]}
+    assert coder.last_entities == {"drug": ["metformin"]}
+    assert coder.last_execution_strategy == "direct_retrieve"
+
+
 def test_retriever_prioritizes_ready_remote_skills_for_fallback() -> None:
     coder = _CoderStub()
     state = AgentState(

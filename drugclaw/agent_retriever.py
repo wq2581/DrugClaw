@@ -10,12 +10,14 @@ The Retriever Agent is now focused on:
 The old _build_subgraph() is replaced by the Graph Build Agent (graph mode)
 or results go directly as text to the Responder Agent (simple mode).
 """
+import re
 from typing import List, Dict, Any, Optional
 
 from .models import AgentState
 from .llm_client import LLMClient
 from .query_plan import (
     QueryPlan,
+    build_fallback_query_plan,
     is_direct_target_lookup,
     normalize_question_type,
     prioritize_target_lookup_skills,
@@ -165,6 +167,21 @@ Provide your plan in JSON format:
         omics_str = self._format_omics_constraints(state.omics_constraints)
         planner_output = getattr(state, "query_plan", None)
 
+        if (
+            isinstance(planner_output, QueryPlan)
+            and resource_filter
+            and (
+                not planner_output.entities
+                or normalize_question_type(planner_output.question_type) == "unknown"
+            )
+        ):
+            planner_output = self._build_resource_filter_query_plan(
+                state.original_query,
+                key_entities=planner_output.entities,
+                resource_filter=resource_filter,
+            )
+            state.query_plan = planner_output
+
         if isinstance(planner_output, QueryPlan):
             query_plan = self._query_plan_to_retrieval_plan(
                 planner_output,
@@ -175,6 +192,11 @@ Provide your plan in JSON format:
             query_plan = self._get_query_plan_filtered(
                 state.original_query, omics_str, state.iteration, resource_filter,
             )
+            state.query_plan = self._build_resource_filter_query_plan(
+                state.original_query,
+                key_entities=query_plan.get("key_entities", {}),
+                resource_filter=resource_filter,
+            )
         else:
             query_plan = self._get_query_plan(
                 state.original_query, omics_str, state.iteration,
@@ -183,6 +205,9 @@ Provide your plan in JSON format:
         # Extract info from the plan
         key_entities = query_plan.get("key_entities", {})
         selected_skills = query_plan.get("selected_skills", [])
+
+        if not self._normalize_entities_for_coder(key_entities) and isinstance(getattr(state, "query_plan", None), QueryPlan):
+            key_entities = dict(state.query_plan.entities)
 
         # Backward compat: also check query_plan list for skill names
         if not selected_skills:
@@ -504,13 +529,67 @@ Respond in JSON:
         try:
             entities = self.llm.generate_json([{"role": "user", "content": entity_prompt}])
         except Exception:
-            entities = {"drugs": [], "genes": [], "diseases": [], "pathways": []}
+            entities = self._infer_entities_from_query(query)
 
         return {
             "key_entities": entities,
             "selected_skills": resource_filter,
             "reasoning": f"resource_filter active: using {resource_filter}",
         }
+
+    def _build_resource_filter_query_plan(
+        self,
+        query: str,
+        *,
+        key_entities: Dict[str, Any],
+        resource_filter: List[str],
+    ) -> QueryPlan:
+        fallback = build_fallback_query_plan(query)
+        entities = self._normalize_entities_for_coder(key_entities)
+        if not entities:
+            entities = self._infer_entities_from_query(query)
+        question_type = self._infer_question_type_from_query(query)
+        return QueryPlan(
+            question_type=question_type or fallback.question_type,
+            entities=entities,
+            subquestions=[query] if query else [],
+            preferred_skills=list(resource_filter),
+            preferred_evidence_types=[],
+            requires_graph_reasoning=False,
+            requires_prediction_sources=False,
+            requires_web_fallback=False,
+            answer_risk_level="high" if question_type == "labeling" else fallback.answer_risk_level,
+            notes=[f"resource_filter active: using {resource_filter}"],
+        )
+
+    @staticmethod
+    def _infer_question_type_from_query(query: str) -> str:
+        lowered = str(query).strip().lower()
+        if not lowered:
+            return "unknown"
+        if any(marker in lowered for marker in ("prescribing", "label", "safety", "warning", "contraindication")):
+            return "labeling"
+        if is_direct_target_lookup(query=lowered):
+            return "target_lookup"
+        return "unknown"
+
+    @staticmethod
+    def _infer_entities_from_query(query: str) -> Dict[str, List[str]]:
+        lowered = str(query).strip().lower()
+        if not lowered:
+            return {}
+
+        for pattern in (
+            r"information\s+is\s+available\s+for\s+([a-z0-9\-]+)",
+            r"available\s+for\s+([a-z0-9\-]+)",
+            r"targets?\s+of\s+([a-z0-9\-]+)",
+            r"does\s+([a-z0-9\-]+)\s+target",
+            r"about\s+([a-z0-9\-]+)$",
+        ):
+            match = re.search(pattern, lowered)
+            if match:
+                return {"drug": [match.group(1)]}
+        return {}
 
     @staticmethod
     def _text_to_retrieved_content(

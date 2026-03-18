@@ -50,6 +50,18 @@ _OFFLINE_FIXTURES = {
             "source": "MedlinePlus",
         }
     ],
+    "metformin": [
+        {
+            "title": "Metformin",
+            "url": "https://medlineplus.gov/druginfo/meds/a696005.html",
+            "summary": (
+                "Metformin is used with diet and exercise to control blood sugar in people "
+                "with type 2 diabetes and includes guidance on gastrointestinal side effects "
+                "and rare lactic acidosis risk."
+            ),
+            "source": "MedlinePlus",
+        }
+    ],
 }
 
 
@@ -253,7 +265,14 @@ class MedlinePlusSkill(RAGSkill):
                 confidence=0.0,
                 retrieval_score=0.8,
                 timestamp="2026-03-18T00:00:00Z",
-                metadata={"skill_category": self.subcategory},
+                metadata={
+                    "skill_category": self.subcategory,
+                    "source_entity": source_entity,
+                    "relationship": "has_patient_drug_info",
+                    "target_entity": title or "MedlinePlus patient guidance",
+                    "source_type": "drug",
+                    "target_type": "drug_info",
+                },
             )
             item.confidence = score_evidence_item(item)
             items.append(item)

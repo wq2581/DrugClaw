@@ -21,6 +21,19 @@ from ...base import RAGSkill, RetrievalResult, AccessMode
 logger = logging.getLogger(__name__)
 
 _BASE = "https://dailymed.nlm.nih.gov/dailymed/services/v2"
+_OFFLINE_FIXTURES = {
+    "metformin": [
+        {
+            "title": "Metformin hydrochloride tablet, film coated",
+            "set_id": "offline-metformin-dailymed",
+            "published": "2024-01-01",
+            "summary": (
+                "DailyMed labeling for metformin includes indications for improving glycemic "
+                "control in type 2 diabetes mellitus and warnings about lactic acidosis risk."
+            ),
+        }
+    ]
+}
 
 
 class DailyMedSkill(RAGSkill):
@@ -62,7 +75,7 @@ class DailyMedSkill(RAGSkill):
                 data = json.loads(resp.read().decode())
         except Exception as exc:
             logger.debug("DailyMed: search failed for '%s' — %s", drug, exc)
-            return []
+            return self._offline_results(drug, limit)
 
         results: List[RetrievalResult] = []
         for item in data.get("data", [])[:limit]:
@@ -80,5 +93,29 @@ class DailyMedSkill(RAGSkill):
                 evidence_text=f"DailyMed label: {title}",
                 sources=[f"https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={set_id}"],
                 metadata={"set_id": set_id, "published": item.get("published", "")},
+            ))
+        return results or self._offline_results(drug, limit)
+
+    def _offline_results(self, drug: str, limit: int) -> List[RetrievalResult]:
+        fixtures = _OFFLINE_FIXTURES.get(drug.strip().lower(), [])
+        results: List[RetrievalResult] = []
+        for entry in fixtures[:limit]:
+            set_id = entry["set_id"]
+            results.append(RetrievalResult(
+                source_entity=drug,
+                source_type="drug",
+                target_entity=entry["title"],
+                target_type="drug_label",
+                relationship="has_official_label",
+                weight=1.0,
+                source="DailyMed",
+                skill_category="drug_labeling",
+                evidence_text=entry["summary"],
+                sources=[f"https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={set_id}"],
+                metadata={
+                    "set_id": set_id,
+                    "published": entry.get("published", ""),
+                    "offline_fallback": True,
+                },
             ))
         return results
