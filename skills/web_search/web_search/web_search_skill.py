@@ -10,8 +10,8 @@ This skill provides real-time web retrieval for drug-related queries.
 DuckDuckGo is the primary engine (free, no key, no rate limits for casual use).
 PubMed is automatically queried when the query contains drug/disease/gene terms.
 
-Optionally install the duckduckgo-search package for richer results:
-    pip install duckduckgo-search
+Optionally install the ddgs package for richer results:
+    pip install ddgs
 
 Config keys
 -----------
@@ -132,29 +132,31 @@ class WebSearchSkill(RAGSkill):
         return self._ddg_html(query, max_results, timeout)
 
     def _ddg_package(self, query: str, max_results: int) -> List[RetrievalResult]:
-        """Use duckduckgo-search package (pip install duckduckgo-search)."""
-        from duckduckgo_search import DDGS  # type: ignore
+        """Use ddgs package (pip install ddgs) or legacy duckduckgo-search."""
+        try:
+            from ddgs import DDGS  # type: ignore  # new package name
+        except ImportError:
+            from duckduckgo_search import DDGS  # type: ignore  # legacy
         results = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=max_results):
-                results.append(RetrievalResult(
-                    source_entity=query,
-                    source_type="query",
-                    target_entity=r.get("title", ""),
-                    target_type="web_page",
-                    relationship="web_result",
-                    weight=1.0,
-                    source="DuckDuckGo",
-                    skill_category="web_search",
-                    evidence_text=r.get("body", ""),
-                    sources=[r.get("href", "")],
-                    metadata={
-                        "title": r.get("title", ""),
-                        "url": r.get("href", ""),
-                        "snippet": r.get("body", ""),
-                        "engine": "DuckDuckGo",
-                    },
-                ))
+        for r in DDGS().text(query, max_results=max_results):
+            results.append(RetrievalResult(
+                source_entity=query,
+                source_type="query",
+                target_entity=r.get("title", ""),
+                target_type="web_page",
+                relationship="web_result",
+                weight=1.0,
+                source="DuckDuckGo",
+                skill_category="web_search",
+                evidence_text=r.get("body", ""),
+                sources=[r.get("href", "")],
+                metadata={
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                    "engine": "DuckDuckGo",
+                },
+            ))
         return results
 
     def _ddg_html(
