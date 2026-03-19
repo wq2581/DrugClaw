@@ -388,7 +388,9 @@ Return ONLY Python code."""
         if skill is None:
             return "", f"Skill '{skill_name}' not registered", []
 
-        # Try the fixed retrieve.py script first
+        retrieve_py_output = ""
+
+        # Try the fixed retrieve.py script first (for text output)
         try:
             skill_file = inspect.getfile(skill.__class__)
             skill_dir = os.path.dirname(skill_file)
@@ -408,25 +410,32 @@ Return ONLY Python code."""
                         text=True,
                         timeout=60,
                     )
-                    output = proc.stdout.strip()
-                    if output:
-                        return output, "", []
-                    if proc.returncode != 0:
+                    retrieve_py_output = proc.stdout.strip()
+                    if proc.returncode != 0 and not retrieve_py_output:
                         print(f"[Code Agent] retrieve.py failed for {skill_name}: "
                               f"{proc.stderr.strip()[:200]}")
         except Exception as exc:
             print(f"[Code Agent] retrieve.py execution error for {skill_name}: {exc}")
 
-        # Fallback: call skill.retrieve() directly
+        # Always call skill.retrieve() for structured records
         try:
             results = skill.retrieve(
                 entities=entities, query=query, max_results=max_results,
             )
             if not results:
+                # If retrieve.py gave us text, return that with empty records
+                if retrieve_py_output:
+                    return retrieve_py_output, "", []
                 return "(no results)", "", []
 
-            lines = []
             records = [_sanitize_record(result) for result in results[:max_results]]
+
+            # Use retrieve.py output as text if available; otherwise format
+            # structured results as human-readable text
+            if retrieve_py_output:
+                return retrieve_py_output, "", records
+
+            lines = []
             for r in results[:max_results]:
                 line = (
                     f"[{r.source}] {r.source_entity} ({r.source_type}) "
@@ -440,6 +449,9 @@ Return ONLY Python code."""
                 lines.append(line)
             return "\n".join(lines), "", records
         except Exception as exc:
+            # skill.retrieve() failed; still return retrieve.py output if we have it
+            if retrieve_py_output:
+                return retrieve_py_output, "", []
             return "", f"retrieve() error: {exc}", []
 
     # ------------------------------------------------------------------
