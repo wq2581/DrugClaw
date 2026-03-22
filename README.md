@@ -132,6 +132,31 @@ python -m drugclaw run --query "What does imatinib target?" --save-md-report
 
 This writes a Markdown report to `query_logs/<query_id>/report.md` and prints the saved path after the run finishes.
 
+Phase 1 now includes input normalization for canonical drug names and common aliases. That means inputs such as `imatinib` / `Gleevec` or `metformin` / `Glucophage` are normalized to the same canonical drug before planning and retrieval.
+
+You can verify alias equivalence locally with these pairs:
+
+```bash
+python -m drugclaw run --query "What are the known drug targets of imatinib?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of Gleevec?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+
+python -m drugclaw run --query "What prescribing and safety information is available for metformin?" --mode simple --resource-filter "DailyMed,openFDA Human Drug,MedlinePlus Drug Info" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What prescribing and safety information is available for Glucophage?" --mode simple --resource-filter "DailyMed,openFDA Human Drug,MedlinePlus Drug Info" --show-plan --show-claims --save-md-report
+```
+
+When comparing the two runs, focus on:
+
+- whether `show-plan` resolves both inputs to the same canonical drug entity
+- whether `query_logs/<query_id>/metadata.json` shows the same `normalized_query` and `input_resolution.canonical_drug_names`
+- whether `report.md` and the final answer keep the same core conclusions and sources
+
+The built-in phase-1 alias seed currently includes:
+
+- `imatinib` ↔ `Gleevec`
+- `metformin` ↔ `Glucophage`
+- `sildenafil` ↔ `Viagra`
+- `atorvastatin` ↔ `Lipitor`
+
 If the demo runs successfully, you already have a minimal usable setup. The next step is optional and only matters when you want broader coverage from `LOCAL_FILE` skills and local datasets.
 
 ### 4. Prepare local resources under `resources_metadata/` for broader coverage
@@ -240,6 +265,8 @@ result = system.query(
 )
 
 print(result["answer"])
+print(result["normalized_query"])
+print(result["input_resolution"])
 ```
 
 ### 11. Thinking modes

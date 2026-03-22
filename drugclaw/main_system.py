@@ -46,6 +46,7 @@ from .agent_responder import ResponderAgent
 from .agent_reflector import ReflectorAgent
 from .agent_websearch import WebSearchAgent
 from .claim_assessment import assess_claims
+from .drug_name_normalizer import DrugNameNormalizer
 from .query_logger import QueryLogger, QuerySession
 from .response_formatter import wrap_answer_card
 from .resource_registry import build_resource_registry
@@ -77,6 +78,7 @@ class DrugClawSystem:
 
         # LLM
         self.llm_client = LLMClient(config)
+        self.drug_name_normalizer = DrugNameNormalizer.default()
 
         # Runtime skill registry; the resource registry derives authoritative
         # counts and status from this runtime view.
@@ -260,14 +262,21 @@ class DrugClawSystem:
 
     def _plan_node(self, state: AgentState) -> AgentState:
         self._record_stage(state, "PLAN")
+        if getattr(state, "resource_filter", []):
+            return state
         if state.query_plan is None:
             omics_constraints = self._format_omics_constraints(
                 state.omics_constraints
             )
+            planning_query = state.normalized_query or state.original_query
             state.query_plan = self.planner.plan(
-                state.original_query,
+                planning_query,
                 omics_constraints=omics_constraints,
             )
+        state.query_plan = self._merge_resolved_entities_into_query_plan(
+            state.query_plan,
+            state.resolved_entities,
+        )
         return state
 
     def _retrieve_node(self, state: AgentState) -> AgentState:
@@ -403,6 +412,46 @@ class DrugClawSystem:
             + ", ".join(sorted(allowed))
         )
 
+    @staticmethod
+    def _extract_resolved_entities(
+        input_resolution: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        canonical_drug_names = input_resolution.get("canonical_drug_names", [])
+        if isinstance(canonical_drug_names, str):
+            canonical_drug_names = [canonical_drug_names]
+
+        resolved_drugs: List[str] = []
+        for value in canonical_drug_names:
+            text = str(value).strip()
+            if text and text not in resolved_drugs:
+                resolved_drugs.append(text)
+
+        if not resolved_drugs:
+            return {}
+        return {"drug": resolved_drugs}
+
+    @staticmethod
+    def _merge_resolved_entities_into_query_plan(query_plan, resolved_entities):
+        if query_plan is None or not resolved_entities:
+            return query_plan
+
+        merged_entities = dict(getattr(query_plan, "entities", {}) or {})
+        for entity_type, values in resolved_entities.items():
+            if not values:
+                continue
+
+            existing_values = merged_entities.get(entity_type, [])
+            merged_values: List[str] = []
+            for value in list(values) + list(existing_values):
+                text = str(value).strip()
+                if text and text not in merged_values:
+                    merged_values.append(text)
+            if merged_values:
+                merged_entities[entity_type] = merged_values
+
+        query_plan.entities = merged_entities
+        return query_plan
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -440,8 +489,17 @@ class DrugClawSystem:
         normalized_mode: str | None = None
         try:
             normalized_mode = self._normalize_thinking_mode(thinking_mode)
+            input_resolution = self.drug_name_normalizer.normalize_query(query)
+            normalized_query = (
+                input_resolution.get("normalized_query")
+                or query
+            )
+            resolved_entities = self._extract_resolved_entities(input_resolution)
             initial_state = AgentState(
                 original_query=query,
+                normalized_query=normalized_query,
+                resolved_entities=resolved_entities,
+                input_resolution=input_resolution,
                 omics_constraints=omics_constraints,
                 thinking_mode=normalized_mode,
                 resource_filter=resource_filter or [],
@@ -449,6 +507,8 @@ class DrugClawSystem:
             if verbose:
                 print(f"\n{'='*80}")
                 print(f"QUERY [{normalized_mode}]: {query}")
+                if normalized_query != query:
+                    print(f"NORMALIZED QUERY: {normalized_query}")
                 if resource_filter:
                     print(f"RESOURCE FILTER: {resource_filter}")
                 print(f"{'='*80}\n")
@@ -468,6 +528,9 @@ class DrugClawSystem:
 
             result = {
                 "query":              query,
+                "normalized_query":   final.get("normalized_query", normalized_query),
+                "resolved_entities":  final.get("resolved_entities", resolved_entities),
+                "input_resolution":   final.get("input_resolution", input_resolution),
                 "answer":             final_answer,
                 "final_answer_structured": (
                     final_answer_structured.to_dict()
