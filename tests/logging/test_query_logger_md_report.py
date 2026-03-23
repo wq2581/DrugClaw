@@ -15,6 +15,24 @@ def _sample_result() -> dict:
             "status": "resolved",
             "canonical_drug_names": ["imatinib"],
             "alias_candidates": ["gleevec"],
+            "identifier_resolution": {
+                "status": "resolved",
+                "detected_identifiers": [
+                    {
+                        "type": "chembl_id",
+                        "raw_text": "CHEMBL941",
+                        "normalized_value": "CHEMBL941",
+                    }
+                ],
+                "resolved_records": [
+                    {
+                        "identifier_type": "chembl_id",
+                        "identifier_value": "CHEMBL941",
+                        "canonical_drug_name": "imatinib",
+                    }
+                ],
+                "errors": [],
+            },
         },
         "answer": "Known Targets:\n- imatinib -> ABL1",
         "mode": "simple",
@@ -105,3 +123,4 @@ def test_query_logger_persists_input_resolution_metadata(tmp_path: Path) -> None
     assert metadata["normalized_query"] == "What does imatinib target?"
     assert metadata["resolved_entities"] == {"drug": ["imatinib"]}
     assert metadata["input_resolution"]["canonical_drug_names"] == ["imatinib"]
+    assert metadata["input_resolution"]["identifier_resolution"]["resolved_records"][0]["identifier_value"] == "CHEMBL941"

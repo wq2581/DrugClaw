@@ -117,6 +117,24 @@ You can also run your own query:
 python -m drugclaw run --query "What are the known drug targets of imatinib?"
 ```
 
+DrugClaw also includes a minimal web/API service entrypoint:
+
+```bash
+python -m drugclaw serve --host 127.0.0.1 --port 8000
+```
+
+After startup, open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+The first service version is intentionally conservative:
+
+- it wraps the existing `DrugClawSystem.query()` flow instead of replacing it
+- it defaults to low concurrency to avoid destabilizing the main workload
+- it does not implement custom token quotas yet and relies on upstream account limits
+
 If you want to inspect the internal planner, claim summaries, or agent logs while debugging:
 
 ```bash
@@ -133,6 +151,14 @@ python -m drugclaw run --query "What does imatinib target?" --save-md-report
 This writes a Markdown report to `query_logs/<query_id>/report.md` and prints the saved path after the run finishes.
 
 Phase 1 now includes input normalization for canonical drug names and common aliases. That means inputs such as `imatinib` / `Gleevec` or `metformin` / `Glucophage` are normalized to the same canonical drug before planning and retrieval.
+
+Phase 2 also adds structured identifier normalization at query entry for:
+
+- `ChEMBL ID`
+- `PubChem CID`
+- `InChIKey`
+
+These identifiers are resolved to a canonical drug name before planning and retrieval. Resolution details are persisted to `query_logs/<query_id>/metadata.json` under `input_resolution.identifier_resolution`.
 
 You can verify alias equivalence locally with these pairs:
 
@@ -157,7 +183,47 @@ The built-in phase-1 alias seed currently includes:
 - `sildenafil` ↔ `Viagra`
 - `atorvastatin` ↔ `Lipitor`
 
+You can also verify structured identifier equivalence with the same drug:
+
+```bash
+python -m drugclaw run --query "What are the known drug targets of CHEMBL941?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of PubChem CID 5291?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of KTUFNOKKBVMGRW-UHFFFAOYSA-N?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+```
+
+For these runs, check:
+
+- whether `show-plan` converges on the same canonical drug entity
+- whether `metadata.json` contains the expected `input_resolution.identifier_resolution` trace
+- whether `report.md` keeps the same core target list and evidence sources as the name-based query
+
 If the demo runs successfully, you already have a minimal usable setup. The next step is optional and only matters when you want broader coverage from `LOCAL_FILE` skills and local datasets.
+
+### 3.1 Minimal Web/API service
+
+The web service exposes a small set of endpoints for internal or small-scale usage:
+
+- `GET /health`
+- `GET /resources`
+- `POST /api/query`
+- `GET /api/queries/{query_id}`
+- `GET /api/queries/{query_id}/report`
+
+Quick local validation:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/api/query \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What are the known drug targets of imatinib?","mode":"simple","resource_filter":["ChEMBL","DGIdb","Open Targets Platform"],"save_md_report":true}'
+```
+
+Deployment recommendation for the first serviceized version:
+
+- run the app with `drugclaw serve`
+- place `nginx` in front of it
+- use `systemd` or another process supervisor
+- keep the service-side API key private; never expose it to the browser
 
 ### 4. Prepare local resources under `resources_metadata/` for broader coverage
 
