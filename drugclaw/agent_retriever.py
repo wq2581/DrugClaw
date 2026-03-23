@@ -166,6 +166,8 @@ Provide your plan in JSON format:
         """
         print(f"\n[Retriever Agent] Iteration {state.iteration}")
         resource_filter = getattr(state, "resource_filter", [])
+        effective_query = self._get_effective_query(state)
+        resolved_entities = self._get_resolved_entities(state)
         if resource_filter:
             print(f"[Retriever Agent] resource_filter={resource_filter}")
 
@@ -182,8 +184,11 @@ Provide your plan in JSON format:
             )
         ):
             planner_output = self._build_resource_filter_query_plan(
-                state.original_query,
-                key_entities=planner_output.entities,
+                effective_query,
+                key_entities=self._merge_key_entities(
+                    planner_output.entities,
+                    resolved_entities,
+                ),
                 resource_filter=resource_filter,
             )
             state.query_plan = planner_output
@@ -196,24 +201,34 @@ Provide your plan in JSON format:
             )
         elif resource_filter:
             query_plan = self._get_query_plan_filtered(
-                state.original_query, omics_str, state.iteration, resource_filter,
+                effective_query, omics_str, state.iteration, resource_filter,
+            )
+            query_plan["key_entities"] = self._merge_key_entities(
+                query_plan.get("key_entities", {}),
+                resolved_entities,
             )
             state.query_plan = self._build_resource_filter_query_plan(
-                state.original_query,
+                effective_query,
                 key_entities=query_plan.get("key_entities", {}),
                 resource_filter=resource_filter,
             )
         else:
             query_plan = self._get_query_plan(
-                state.original_query, omics_str, state.iteration,
+                effective_query, omics_str, state.iteration,
             )
 
         # Extract info from the plan
-        key_entities = query_plan.get("key_entities", {})
+        key_entities = self._merge_key_entities(
+            query_plan.get("key_entities", {}),
+            resolved_entities,
+        )
         selected_skills = query_plan.get("selected_skills", [])
 
-        if not self._normalize_entities_for_coder(key_entities) and isinstance(getattr(state, "query_plan", None), QueryPlan):
-            key_entities = dict(state.query_plan.entities)
+        if not key_entities and isinstance(getattr(state, "query_plan", None), QueryPlan):
+            key_entities = self._merge_key_entities(
+                state.query_plan.entities,
+                resolved_entities,
+            )
 
         # Backward compat: also check query_plan list for skill names
         if not selected_skills:
@@ -235,6 +250,7 @@ Provide your plan in JSON format:
                 entities,
                 skill_names=selected_skills,
             )
+            entities = self._merge_key_entities(entities, resolved_entities)
             print(f"[Retriever Agent] Resolved entities: {entities}")
 
         execution_strategy = self._select_execution_strategy(state)
@@ -243,18 +259,22 @@ Provide your plan in JSON format:
         coder_result = self.coder.generate_and_execute(
             skill_names=selected_skills,
             entities=entities,
-            query=state.original_query,
+            query=effective_query,
             execution_strategy=execution_strategy,
         )
 
         # Build a combined context string with query + entities + results
         context_parts = [
-            f"Query: {state.original_query}",
-            f"Key Entities: {key_entities}",
+            f"Original Query: {state.original_query}",
+        ]
+        if effective_query != state.original_query:
+            context_parts.append(f"Normalized Query: {effective_query}")
+        context_parts.extend([
+            f"Key Entities: {entities}",
             f"Skills Used: {selected_skills}",
             "",
             coder_result["text"],
-        ]
+        ])
 
         # Include history if available
         if state.reasoning_steps:
@@ -268,10 +288,10 @@ Provide your plan in JSON format:
         retrieved_text = "\n".join(context_parts)
 
         # Update state
-        state.current_query_entities = key_entities
+        state.current_query_entities = entities
         state.retrieved_text = retrieved_text
         state.evidence_items = self._build_evidence_items(
-            coder_result, selected_skills, state.original_query,
+            coder_result, selected_skills, effective_query,
         )
         state.retrieval_diagnostics = self._build_retrieval_diagnostics(
             coder_result, selected_skills,
@@ -311,19 +331,50 @@ Provide your plan in JSON format:
         return "\n".join(parts) if parts else "No specific constraints."
 
     @staticmethod
+    def _get_effective_query(state: AgentState) -> str:
+        normalized_query = str(getattr(state, "normalized_query", "") or "").strip()
+        if normalized_query:
+            return normalized_query
+        return str(getattr(state, "original_query", "") or "")
+
+    @staticmethod
+    def _get_resolved_entities(state: AgentState) -> Dict[str, List[str]]:
+        return RetrieverAgent._normalize_entities_for_coder(
+            getattr(state, "resolved_entities", {}) or {}
+        )
+
+    @staticmethod
+    def _merge_key_entities(
+        key_entities: Dict[str, Any],
+        resolved_entities: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        merged = RetrieverAgent._normalize_entities_for_coder(key_entities)
+        normalized_resolved = RetrieverAgent._normalize_entities_for_coder(
+            resolved_entities
+        )
+
+        for entity_type, values in normalized_resolved.items():
+            if entity_type == "drug":
+                merged[entity_type] = list(values)
+            elif entity_type not in merged:
+                merged[entity_type] = list(values)
+
+        return merged
+
+    @staticmethod
     def _select_execution_strategy(state: AgentState) -> str:
         plan = getattr(state, "query_plan", None)
         thinking_mode = str(getattr(state, "thinking_mode", ""))
-        original_query = str(getattr(state, "original_query", "")).strip().lower()
+        effective_query = RetrieverAgent._get_effective_query(state).strip().lower()
         entities = getattr(plan, "entities", {}) if plan is not None else {}
         has_drug_entity = bool(getattr(entities, "get", lambda *_: [])("drug"))
         question_type = normalize_question_type(getattr(plan, "question_type", ""))
         direct_question_type = (
-            is_direct_target_lookup(query=original_query, question_type=question_type)
+            is_direct_target_lookup(query=effective_query, question_type=question_type)
             or any(marker in question_type for marker in ("label", "retrieval"))
         )
         direct_query_shape = has_drug_entity and any(
-            marker in original_query
+            marker in effective_query
             for marker in (
                 "target",
                 "targets",

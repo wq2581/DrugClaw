@@ -96,6 +96,9 @@ class QueryLogger:
             "query_id": query_id,
             "timestamp": timestamp.isoformat(),
             "query": query,
+            "normalized_query": result.get("normalized_query", query),
+            "resolved_entities": result.get("resolved_entities", {}),
+            "input_resolution": result.get("input_resolution", {}),
             "mode": result.get("mode", ""),
             "resource_filter": result.get("resource_filter", []),
             "iterations": result.get("iterations", 0),
@@ -120,6 +123,7 @@ class QueryLogger:
         reasoning_md_parts = [
             f"# Reasoning Trace\n",
             f"> **Query**: {query}\n",
+            f"> **Normalized Query**: {result.get('normalized_query', query)}\n",
             f"> **Query ID**: `{query_id}`\n",
             "",
         ]

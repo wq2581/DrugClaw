@@ -131,6 +131,31 @@ python -m drugclaw run --query "What does imatinib target?" --save-md-report
 
 执行后会在 `query_logs/<query_id>/report.md` 生成 Markdown 报告，并在命令结束时打印保存路径。
 
+当前一期已支持“药物标准名 + 常见别名”输入标准化。也就是说，像 `imatinib` / `Gleevec`、`metformin` / `Glucophage` 这类输入会在入口先统一到 canonical drug name，再进入后续规划和检索链路。
+
+你可以直接用下面几组命令做本地回归：
+
+```bash
+python -m drugclaw run --query "What are the known drug targets of imatinib?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of Gleevec?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+
+python -m drugclaw run --query "What prescribing and safety information is available for metformin?" --mode simple --resource-filter "DailyMed,openFDA Human Drug,MedlinePlus Drug Info" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What prescribing and safety information is available for Glucophage?" --mode simple --resource-filter "DailyMed,openFDA Human Drug,MedlinePlus Drug Info" --show-plan --show-claims --save-md-report
+```
+
+检查时重点看三件事：
+
+- `show-plan` 输出里的药物实体是否都落到同一个 canonical name
+- 两次运行生成的 `query_logs/<query_id>/metadata.json` 里，`normalized_query` 和 `input_resolution.canonical_drug_names` 是否一致
+- `report.md` / 最终回答里的主要结论和证据来源是否基本一致
+
+目前内置的一期常见别名种子包括：
+
+- `imatinib` ↔ `Gleevec`
+- `metformin` ↔ `Glucophage`
+- `sildenafil` ↔ `Viagra`
+- `atorvastatin` ↔ `Lipitor`
+
 如果这里已经能跑通，你其实已经有了一条最小可用路径。下一步是增强项，主要用于提升覆盖面，并启用依赖本地数据的那些 skill。
 
 ### 4. 准备本地资源目录 `resources_metadata/` 以获得更广覆盖
@@ -242,6 +267,8 @@ result = system.query(
 )
 
 print(result["answer"])
+print(result["normalized_query"])
+print(result["input_resolution"])
 ```
 
 ### 11. 三种思考模式

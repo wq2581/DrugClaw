@@ -444,6 +444,38 @@ def test_retriever_resource_filter_reuses_fallback_query_plan_entities_when_llm_
     assert coder.last_execution_strategy == "direct_retrieve"
 
 
+def test_retriever_resource_filter_prefers_resolved_alias_entities() -> None:
+    class _EntityExtractionFailLLM:
+        def generate_json(self, messages, temperature=0.3):
+            raise ValueError("entity extraction unavailable")
+
+    coder = _CoderStub()
+    state = AgentState(
+        original_query="What does Gleevec target?",
+        normalized_query="What does imatinib target?",
+        resolved_entities={"drug": ["imatinib"]},
+        input_resolution={
+            "status": "resolved",
+            "canonical_drug_names": ["imatinib"],
+        },
+        thinking_mode="simple",
+        resource_filter=["BindingDB"],
+    )
+
+    retriever = RetrieverAgent(
+        _EntityExtractionFailLLM(),
+        _SelectiveRegistryStub(["BindingDB"]),
+        coder_agent=coder,
+    )
+
+    updated = retriever.execute(state)
+
+    assert updated.query_plan is not None
+    assert updated.query_plan.entities == {"drug": ["imatinib"]}
+    assert updated.current_query_entities == {"drug": ["imatinib"]}
+    assert coder.last_entities == {"drug": ["imatinib"]}
+
+
 def test_retriever_enriches_empty_planner_query_plan_when_resource_filter_is_present() -> None:
     coder = _CoderStub()
     state = AgentState(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from drugclaw.query_logger import QueryLogger
@@ -8,6 +9,13 @@ from drugclaw.query_logger import QueryLogger
 def _sample_result() -> dict:
     return {
         "query": "What does imatinib target?",
+        "normalized_query": "What does imatinib target?",
+        "resolved_entities": {"drug": ["imatinib"]},
+        "input_resolution": {
+            "status": "resolved",
+            "canonical_drug_names": ["imatinib"],
+            "alias_candidates": ["gleevec"],
+        },
         "answer": "Known Targets:\n- imatinib -> ABL1",
         "mode": "simple",
         "resource_filter": ["BindingDB"],
@@ -79,3 +87,21 @@ def test_query_logger_skips_md_report_when_not_requested(tmp_path: Path) -> None
     report_path = tmp_path / "query_logs" / query_id / "report.md"
 
     assert not report_path.exists()
+
+
+def test_query_logger_persists_input_resolution_metadata(tmp_path: Path) -> None:
+    logger = QueryLogger(log_dir=str(tmp_path / "query_logs"))
+
+    query_id = logger.log_query(
+        "What does Gleevec target?",
+        _sample_result(),
+        save_md_report=False,
+    )
+
+    metadata_path = tmp_path / "query_logs" / query_id / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    assert metadata["query"] == "What does Gleevec target?"
+    assert metadata["normalized_query"] == "What does imatinib target?"
+    assert metadata["resolved_entities"] == {"drug": ["imatinib"]}
+    assert metadata["input_resolution"]["canonical_drug_names"] == ["imatinib"]

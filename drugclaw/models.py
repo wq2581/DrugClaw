@@ -155,6 +155,9 @@ class AgentState:
     """Global state shared across all agents in the LangGraph"""
     # Input
     original_query: str
+    normalized_query: str = ""
+    resolved_entities: Dict[str, List[str]] = field(default_factory=dict)
+    input_resolution: Dict[str, Any] = field(default_factory=dict)
     omics_constraints: Optional[OmicsConstraints] = None
     # Thinking mode (simple | web_only | graph)
     thinking_mode: str = ThinkingMode.GRAPH
@@ -209,6 +212,9 @@ class AgentState:
         """Convert state to dictionary for serialization"""
         return {
             'original_query': self.original_query,
+            'normalized_query': self.normalized_query,
+            'resolved_entities': self.resolved_entities,
+            'input_resolution': self.input_resolution,
             'iteration': self.iteration,
             'current_answer': self.current_answer,
             'evidence_sufficient': self.evidence_sufficient,
@@ -220,6 +226,9 @@ class AgentState:
 class AgentStateDict(TypedDict, total=False):
     """Typed dictionary version of AgentState for LangGraph"""
     original_query: str
+    normalized_query: str
+    resolved_entities: Dict[str, List[str]]
+    input_resolution: Dict[str, Any]
     omics_constraints: Optional[OmicsConstraints]
     thinking_mode: str
     resource_filter: List[str]
