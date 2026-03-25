@@ -25,12 +25,18 @@ DI_Mapped           DI  → UMLS/SNOMED + qualifiers
 """
 
 import os, re, json
+from pathlib import Path
 
 # ── path ────────────────────────────────────────────────────────────
 DATA_PATH = os.environ.get(
     "PSYTAR_XLSX",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_nlp/PsyTAR/PsyTAR_dataset.xlsx",
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "drug_nlp"
+        / "PsyTAR"
+        / "PsyTAR_dataset.xlsx"
+    ),
 )
 
 # ── lazy cache ──────────────────────────────────────────────────────

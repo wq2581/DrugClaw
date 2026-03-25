@@ -12,10 +12,16 @@ Access: Download Excel files from the FDA LTKB website.
 """
 
 import os, json, re
+from pathlib import Path
 from typing import Union
 
 # ── Data paths (HPC absolute) ──────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_toxicity/DILI"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_toxicity"
+    / "DILI"
+)
 DILIRANK_FILE = os.path.join(DATA_DIR, "Drug Induced Liver Injury Rank (DILIrank 2.0) Dataset  FDA.xlsx")
 DILIST_FILE   = os.path.join(DATA_DIR, "DILIst Supplementary Table.xlsx")
 

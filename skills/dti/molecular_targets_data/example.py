@@ -5,19 +5,25 @@ Source   : https://wiki.nci.nih.gov/spaces/NCIDTPdata/pages/155845004/Molecular+
 File     : WEB_DATA_PROTEIN.ZIP  (protein expression across NCI-60 cell lines)
 
 Download:
-  Already at: /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/
+  Already at: resources_metadata/
                dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT
 """
 
 import csv, os, re, json, io
+from pathlib import Path
 from collections import defaultdict
 from typing import Union
 
 # ── Config ──────────────────────────────────────────────────────────────
 DATA_PATH = os.environ.get(
     "NCI_MOLTARGET_DATA",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/"
-    "dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT",
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "dti"
+        / "Molecular Target Data"
+        / "WEB_DATA_PROTEIN.TXT"
+    ),
 )
 
 # Column names from NCI documentation (protein subset)

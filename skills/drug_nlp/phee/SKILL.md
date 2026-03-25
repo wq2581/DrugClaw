@@ -72,7 +72,7 @@ output.
 - **Source**: PHEE dataset (Zenodo record 7689970), EMNLP 2022
 - **Files**: `train.json` (~2,900 sentences), `dev.json` (~960), `test.json` (~960)
 - **Path**: `DATA_DIR` variable in `38_PHEE.py`
-  (`/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/PHEE/data/json`)
+  (`resources_metadata/drug_nlp/PHEE/data/json`)
 - **Event types**: `Adverse_event`, `Potential_therapeutic_event`
 - **Main arguments**: Subject, Treatment, Effect
 - **Sub-arguments**: Subject (age, gender, race, population, disorder); Treatment (drug, dosage, freq, route, duration, disorder, combination.drug)

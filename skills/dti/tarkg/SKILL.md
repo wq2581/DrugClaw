@@ -21,7 +21,7 @@ description: >
 ## Data location
 
 ```
-/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/dti/TarKG/
+`resources_metadata/dti/TarKG/`
 ```
 
 Or set env `TARKG_DATA` to override.

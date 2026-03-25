@@ -6,10 +6,16 @@ Query patient drug reviews by drug name or medical condition.
 import csv
 import os
 import re
+from pathlib import Path
 from collections import defaultdict
 
 # ── data path ──────────────────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_review/DrugReviews"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_review"
+    / "DrugReviews"
+)
 TRAIN_FILE = os.path.join(DATA_DIR, "drugLibTrain_raw.tsv")
 TEST_FILE  = os.path.join(DATA_DIR, "drugLibTest_raw.tsv")
 

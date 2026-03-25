@@ -12,10 +12,16 @@ UniD3_L1T2.graphml  UniD3_L2T1.graphml  UniD3_L2T3.graphml
 """
 
 import os, glob
+from pathlib import Path
 import networkx as nx
 from typing import Union, Optional
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/UniD3"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_knowledgebase"
+    / "UniD3"
+)
 
 # ── Internals ────────────────────────────────────────────────────────────────
 

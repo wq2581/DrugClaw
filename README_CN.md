@@ -47,15 +47,15 @@ DrugClaw 是一个围绕药物任务构建的多智能体 RAG 系统，专门处
 python3 -m venv .venv
 . .venv/bin/activate  # Windows: `.venv\\Scripts\\activate`
 python -m pip install --upgrade pip
-python -m pip install -e .[dev] --no-build-isolation
+python -m pip install --no-build-isolation -r requirements.txt
 ```
 
-可选依赖，仅在你要启用对应 CLI 型 skill 时安装：
+`requirements.txt` 会一次装好核心包、测试依赖、常见本地 example 依赖，以及之前分散列出来的 CLI-first skill 可选依赖。
+
+如果你只想保留更轻的可编辑安装：
 
 ```bash
-python -m pip install chembl_webresource_client
-python -m pip install libchebipy
-python -m pip install bioservices
+python -m pip install -e .[dev] --no-build-isolation
 ```
 
 ### 2. 准备 `navigator_api_keys.json`
@@ -116,6 +116,24 @@ python -m drugclaw demo
 python -m drugclaw run --query "What are the known drug targets of imatinib?"
 ```
 
+DrugClaw 现在也提供了最小可用的 Web/API 服务入口：
+
+```bash
+python -m drugclaw serve --host 127.0.0.1 --port 8000
+```
+
+启动后可直接访问：
+
+```text
+http://127.0.0.1:8000/
+```
+
+这版服务化是保守实现，核心原则是：
+
+- 继续复用现有 `DrugClawSystem.query()` 主链路
+- 默认低并发，优先保证主任务稳定
+- 暂时不做自定义 token 限额，先依赖上游账号本身的额度限制
+
 如果你想在排查时看到规划结果、claim 摘要或 agent 日志，可以直接打开这些开关：
 
 ```bash
@@ -132,6 +150,14 @@ python -m drugclaw run --query "What does imatinib target?" --save-md-report
 执行后会在 `query_logs/<query_id>/report.md` 生成 Markdown 报告，并在命令结束时打印保存路径。
 
 当前一期已支持“药物标准名 + 常见别名”输入标准化。也就是说，像 `imatinib` / `Gleevec`、`metformin` / `Glucophage` 这类输入会在入口先统一到 canonical drug name，再进入后续规划和检索链路。
+
+当前二期还支持三类结构化标识符入口标准化：
+
+- `ChEMBL ID`
+- `PubChem CID`
+- `InChIKey`
+
+这些输入会先在入口被解析成 canonical drug name，再进入规划和检索。解析细节会写入 `query_logs/<query_id>/metadata.json` 的 `input_resolution.identifier_resolution`。
 
 你可以直接用下面几组命令做本地回归：
 
@@ -156,7 +182,55 @@ python -m drugclaw run --query "What prescribing and safety information is avail
 - `sildenafil` ↔ `Viagra`
 - `atorvastatin` ↔ `Lipitor`
 
+你也可以用同一个药物的结构化标识符输入做回归：
+
+```bash
+python -m drugclaw run --query "What are the known drug targets of CHEMBL941?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of PubChem CID 5291?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+python -m drugclaw run --query "What are the known drug targets of KTUFNOKKBVMGRW-UHFFFAOYSA-N?" --mode simple --resource-filter "ChEMBL,DGIdb,Open Targets Platform" --show-plan --show-claims --save-md-report
+```
+
+检查时重点再加三件事：
+
+- `show-plan` 是否仍然收敛到同一个 canonical drug
+- `metadata.json` 里是否落出了 `input_resolution.identifier_resolution`
+- `report.md` 里的主要靶点和证据来源是否与药名查询基本一致
+
 如果这里已经能跑通，你其实已经有了一条最小可用路径。下一步是增强项，主要用于提升覆盖面，并启用依赖本地数据的那些 skill。
+
+### 3.1 最小 Web/API 服务
+
+第一版服务暴露的核心接口包括：
+
+- `GET /health`
+- `GET /resources`
+- `POST /api/query`
+- `GET /api/queries/{query_id}`
+- `GET /api/queries/{query_id}/report`
+
+本地快速验证：
+
+```bash
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/api/query \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What are the known drug targets of imatinib?","mode":"simple","resource_filter":["ChEMBL","DGIdb","Open Targets Platform"],"save_md_report":true}'
+```
+
+第一版部署建议：
+
+- 用 `drugclaw serve` 启动应用
+- 前面用 `nginx` 做反向代理
+- 用 `systemd` 或其他守护方式管理进程
+- 服务端保管 API key，不要把 key 下发到浏览器
+
+如果你要把这版服务公开到公网，建议直接参考：
+
+- `docs/2026-03-23-DrugClaw-公网部署说明.md`
+- `deploy/nginx/drugclaw.conf`
+- `deploy/systemd/drugclaw.service`
+
+注意：正式部署不要直接把 `8000` 端口裸暴露到外网，推荐仍然让 DrugClaw 只监听 `127.0.0.1:8000`，再由 `nginx + HTTPS` 对外提供服务。
 
 ### 4. 准备本地资源目录 `resources_metadata/` 以获得更广覆盖
 

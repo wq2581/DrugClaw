@@ -80,12 +80,83 @@ class _RuntimeRegistryStub:
         return None
 
 
+class _StructuredResolverStub:
+    @classmethod
+    def default(cls, config):
+        return cls()
+
+    def resolve_query(self, query):
+        if "CHEMBL941" in query:
+            return {
+                "original_query": query,
+                "normalized_query": query.replace("CHEMBL941", "imatinib"),
+                "status": "resolved",
+                "detected_identifiers": [
+                    {
+                        "type": "chembl_id",
+                        "raw_text": "CHEMBL941",
+                        "normalized_value": "CHEMBL941",
+                    }
+                ],
+                "resolved_records": [
+                    {
+                        "identifier_type": "chembl_id",
+                        "identifier_value": "CHEMBL941",
+                        "canonical_name": "imatinib",
+                        "source": "stub",
+                        "status": "resolved",
+                    }
+                ],
+                "errors": [],
+            }
+
+        return {
+            "original_query": query,
+            "normalized_query": query,
+            "status": "unresolved",
+            "detected_identifiers": [],
+            "resolved_records": [],
+            "errors": [],
+        }
+
+
+class _StructuredResolverUnknownCanonicalStub:
+    @classmethod
+    def default(cls, config):
+        return cls()
+
+    def resolve_query(self, query):
+        return {
+            "original_query": query,
+            "normalized_query": query.replace("CHEMBL1234", "dasatinib"),
+            "status": "resolved",
+            "detected_identifiers": [
+                {
+                    "type": "chembl_id",
+                    "raw_text": "CHEMBL1234",
+                    "normalized_value": "CHEMBL1234",
+                }
+            ],
+            "resolved_records": [
+                {
+                    "identifier_type": "chembl_id",
+                    "identifier_value": "CHEMBL1234",
+                    "canonical_drug_name": "dasatinib",
+                    "source": "stub",
+                    "status": "resolved",
+                }
+            ],
+            "errors": [],
+        }
+
+
 def test_query_normalizes_alias_before_planning_and_exposes_resolution(monkeypatch) -> None:
     planner_stub = _PlannerCaptureStub()
 
     monkeypatch.setattr(main_system_module, "LLMClient", lambda config: object())
     monkeypatch.setattr(main_system_module, "build_default_registry", lambda config: _RuntimeRegistryStub())
     monkeypatch.setattr(main_system_module, "build_resource_registry", lambda registry: object())
+    monkeypatch.setattr(main_system_module, "StructuredInputResolver", _StructuredResolverStub, raising=False)
     monkeypatch.setattr(main_system_module, "PlannerAgent", lambda *args, **kwargs: planner_stub)
     monkeypatch.setattr(main_system_module, "CoderAgent", _NoOpAgent)
     monkeypatch.setattr(main_system_module, "RetrieverAgent", _RetrieverNodeStub)
@@ -130,6 +201,7 @@ def test_query_with_resource_filter_bypasses_planner_and_builds_deterministic_pl
     monkeypatch.setattr(main_system_module, "LLMClient", lambda config: object())
     monkeypatch.setattr(main_system_module, "build_default_registry", lambda config: _RuntimeRegistryStub())
     monkeypatch.setattr(main_system_module, "build_resource_registry", lambda registry: object())
+    monkeypatch.setattr(main_system_module, "StructuredInputResolver", _StructuredResolverStub, raising=False)
     monkeypatch.setattr(main_system_module, "PlannerAgent", lambda *args, **kwargs: _PlannerMustNotRunStub())
     monkeypatch.setattr(main_system_module, "CoderAgent", _NoOpAgent)
     monkeypatch.setattr(main_system_module, "RetrieverAgent", _DeterministicRetrieverNodeStub)
@@ -156,3 +228,68 @@ def test_query_with_resource_filter_bypasses_planner_and_builds_deterministic_pl
         "DGIdb",
         "Open Targets Platform",
     ]
+
+
+def test_query_resolves_chembl_identifier_before_planning(monkeypatch) -> None:
+    planner_stub = _PlannerCaptureStub()
+
+    monkeypatch.setattr(main_system_module, "LLMClient", lambda config: object())
+    monkeypatch.setattr(main_system_module, "build_default_registry", lambda config: _RuntimeRegistryStub())
+    monkeypatch.setattr(main_system_module, "build_resource_registry", lambda registry: object())
+    monkeypatch.setattr(main_system_module, "StructuredInputResolver", _StructuredResolverStub, raising=False)
+    monkeypatch.setattr(main_system_module, "PlannerAgent", lambda *args, **kwargs: planner_stub)
+    monkeypatch.setattr(main_system_module, "CoderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RetrieverAgent", _RetrieverNodeStub)
+    monkeypatch.setattr(main_system_module, "GraphBuilderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RerankerAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "ResponderAgent", _ResponderNodeStub)
+    monkeypatch.setattr(main_system_module, "ReflectorAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "WebSearchAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "wrap_answer_card", lambda answer, result: answer)
+
+    system = main_system_module.DrugClawSystem(config=object(), enable_logging=False)
+    result = system.query(
+        "What are the known drug targets of CHEMBL941?",
+        thinking_mode="simple",
+    )
+
+    assert planner_stub.calls == ["What are the known drug targets of imatinib?"]
+    assert result["normalized_query"] == "What are the known drug targets of imatinib?"
+    assert result["resolved_entities"] == {"drug": ["imatinib"]}
+    assert result["input_resolution"]["status"] == "resolved"
+    assert result["input_resolution"]["identifier_resolution"]["status"] == "resolved"
+    assert result["input_resolution"]["identifier_resolution"]["resolved_records"][0]["identifier_value"] == "CHEMBL941"
+
+
+def test_query_keeps_identifier_resolved_canonical_when_alias_seed_does_not_know_it(monkeypatch) -> None:
+    planner_stub = _PlannerCaptureStub()
+
+    monkeypatch.setattr(main_system_module, "LLMClient", lambda config: object())
+    monkeypatch.setattr(main_system_module, "build_default_registry", lambda config: _RuntimeRegistryStub())
+    monkeypatch.setattr(main_system_module, "build_resource_registry", lambda registry: object())
+    monkeypatch.setattr(
+        main_system_module,
+        "StructuredInputResolver",
+        _StructuredResolverUnknownCanonicalStub,
+        raising=False,
+    )
+    monkeypatch.setattr(main_system_module, "PlannerAgent", lambda *args, **kwargs: planner_stub)
+    monkeypatch.setattr(main_system_module, "CoderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RetrieverAgent", _RetrieverNodeStub)
+    monkeypatch.setattr(main_system_module, "GraphBuilderAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "RerankerAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "ResponderAgent", _ResponderNodeStub)
+    monkeypatch.setattr(main_system_module, "ReflectorAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "WebSearchAgent", _NoOpAgent)
+    monkeypatch.setattr(main_system_module, "wrap_answer_card", lambda answer, result: answer)
+
+    system = main_system_module.DrugClawSystem(config=object(), enable_logging=False)
+    result = system.query(
+        "What are the known drug targets of CHEMBL1234?",
+        thinking_mode="simple",
+    )
+
+    assert planner_stub.calls == ["What are the known drug targets of dasatinib?"]
+    assert result["normalized_query"] == "What are the known drug targets of dasatinib?"
+    assert result["resolved_entities"] == {"drug": ["dasatinib"]}
+    assert result["input_resolution"]["canonical_drug_names"] == ["dasatinib"]

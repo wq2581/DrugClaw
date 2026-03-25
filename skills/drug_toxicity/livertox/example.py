@@ -16,7 +16,13 @@ import json
 from pathlib import Path
 from lxml import etree
 
-DATA_DIR = Path("/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_toxicity/LiverTox/livertox_NBK547852")
+DATA_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_toxicity"
+    / "LiverTox"
+    / "livertox_NBK547852"
+)
 
 
 def load_documents():

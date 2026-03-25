@@ -14,9 +14,17 @@ Access method: Local JSON files downloaded from Zenodo.
 import json
 import os
 import re
+from pathlib import Path
 from typing import Union
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/PHEE/data/json"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_nlp"
+    / "PHEE"
+    / "data"
+    / "json"
+)
 
 
 # ---------------------------------------------------------------------------

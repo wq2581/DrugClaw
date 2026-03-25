@@ -16,14 +16,18 @@ from __future__ import annotations
 
 import re
 import json
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 # ── data path (HPC absolute) ────────────────────────────────────────────────
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_repurposing/RepurposeDrugs/dataset_single.xlsx"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_repurposing"
+    / "RepurposeDrugs"
+    / "dataset_single.xlsx"
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────────

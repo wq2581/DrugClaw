@@ -27,7 +27,7 @@ DATA_DIR/
 
 Default `DATA_DIR`:
 ```
-/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_toxicity/DILI
+`resources_metadata/drug_toxicity/DILI`
 ```
 
 Override via environment variable: `export DILI_DATA_DIR=/your/path`

@@ -15,9 +15,12 @@ Columns: A_Drug_ID, A_Drug_Name, B_Drug_ID, B_Drug_Name, Mechanism_Category
 import os
 import csv
 import json
+from pathlib import Path
 from typing import List, Dict, Optional, Union
 
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/ddi/MecDDI"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3] / "resources_metadata" / "ddi" / "MecDDI"
+)
 
 
 def load_mecddi(data_dir: str = DATA_DIR) -> List[Dict]:

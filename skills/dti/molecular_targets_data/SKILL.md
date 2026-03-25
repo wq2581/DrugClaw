@@ -98,7 +98,7 @@ print(json.dumps(mt.to_json(hits[:5]), indent=2))
 - **Provider**: NCI Developmental Therapeutics Program (DTP)
 - **URL**: https://wiki.nci.nih.gov/spaces/NCIDTPdata/pages/155845004/Molecular+Target+Data
 - **File**: `WEB_DATA_PROTEIN.TXT` (headerless CSV, comma-delimited)
-- **Local Path**: `/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT`
+- **Local Path**: `resources_metadata/dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT`
 - **Format**: comma-delimited, 14 columns (see Record Fields above)
 - **Auth**: None (public domain, U.S. government)
 
@@ -106,5 +106,5 @@ print(json.dumps(mt.to_json(hits[:5]), indent=2))
 
 ```bash
 # File already at:
-# /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT
+# resources_metadata/dti/Molecular Target Data/WEB_DATA_PROTEIN.TXT
 ```

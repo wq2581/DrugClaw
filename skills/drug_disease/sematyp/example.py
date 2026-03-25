@@ -13,13 +13,20 @@ Access: Local files (download from GitHub).
 
 import os
 import json
+from pathlib import Path
 from collections import defaultdict
 from typing import Union
 
 # ── Point this to your local SemaTyP-main directory ──────────────────────
 DATA_DIR = os.environ.get(
     "SEMATYP_DATA_DIR",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_disease/SemaTyP/SemaTyP-main"
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "drug_disease"
+        / "SemaTyP"
+        / "SemaTyP-main"
+    ),
 )
 
 

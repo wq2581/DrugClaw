@@ -9,13 +9,16 @@ Dependency: pip install pypdf
 """
 
 import json, os, re
+from pathlib import Path
 
 DATA_DIR = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/"
-    "drug_knowledgebase/WHO Essential Medicines List"
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_knowledgebase"
+    / "WHO Essential Medicines List"
 )
-PDF_PATH  = os.path.join(DATA_DIR, "WHO EML 23rd List (2023).pdf")
-CACHE_PATH = os.path.join(DATA_DIR, "who_eml_23.json")
+PDF_PATH = str(DATA_DIR / "WHO EML 23rd List (2023).pdf")
+CACHE_PATH = str(DATA_DIR / "who_eml_23.json")
 
 # ── patterns ─────────────────────────────────────────────────────────────
 # Section header: "1.1.2.  Injectable medicines" or "6.  Anti-infective medicines"

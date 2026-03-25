@@ -11,12 +11,19 @@ Given one or more drug/entity names, returns all annotated DDI information
 
 import os
 import json
+from pathlib import Path
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from typing import Union
 
 # ── Configure this path to your local DDICorpus-master root ──────────────
-CORPUS_ROOT = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/DDICorpus2013/DDICorpus-master"
+CORPUS_ROOT = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_nlp"
+    / "DDICorpus2013"
+    / "DDICorpus-master"
+)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────

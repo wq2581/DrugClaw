@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DrugClaw</title>
+    <link rel="stylesheet" href="/static/chat.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="panel">
+        <h1>DrugClaw</h1>
+        <p class="subtitle">Drug-specialized web query service</p>
+        <form id="query-form">
+          <textarea id="query-input" placeholder="Ask a drug question...">What are the known drug targets of imatinib?</textarea>
+          <div class="actions">
+            <button type="submit">Send</button>
+            <span id="status">Idle</span>
+          </div>
+        </form>
+        <section id="result" class="result"></section>
+      </section>
+    </main>
+    <script src="/static/chat.js"></script>
+  </body>
+</html>

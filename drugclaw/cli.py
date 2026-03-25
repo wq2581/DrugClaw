@@ -157,6 +157,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to navigator_api_keys.json. Use --key-file api_keys.json to override.",
     )
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run the DrugClaw web/API service.",
+    )
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind the local server to.",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind the local server to.",
+    )
+    serve_parser.add_argument(
+        "--key-file",
+        default="navigator_api_keys.json",
+        help="Path to navigator_api_keys.json.",
+    )
+
     return parser
 
 
@@ -473,6 +494,19 @@ def _run_query(
     return 0 if result.get("success") else 1
 
 
+def _run_serve(host: str, port: int, key_file: str) -> int:
+    import uvicorn
+
+    from .server_app import create_app
+
+    uvicorn.run(
+        create_app(key_file=key_file),
+        host=host,
+        port=port,
+    )
+    return 0
+
+
 def _print_evidence_summary(result: dict) -> None:
     structured = result.get("final_answer_structured") or {}
     if not structured:
@@ -561,6 +595,9 @@ def main(argv: List[str] | None = None) -> int:
 
     if args.command == "list":
         return _run_list(args.key_file)
+
+    if args.command == "serve":
+        return _run_serve(args.host, args.port, args.key_file)
 
     preset = DEMO_PRESETS[args.preset]
     print(f"[DrugClaw demo] preset={args.preset} - {preset['description']}")

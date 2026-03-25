@@ -16,11 +16,14 @@ Access method: Local TSV files (tab-delimited, '!' comment lines).
 import csv
 import os
 import re
+from pathlib import Path
 
 # ---------- paths (edit for your environment) ----------------------------
-DATA_DIR = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_repurposing/DrugRepurposingHub"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_repurposing"
+    / "DrugRepurposingHub"
 )
 DRUG_FILE = os.path.join(DATA_DIR, "repo-drug-annotation-20200324.txt")
 SAMPLE_FILE = os.path.join(DATA_DIR, "repo-sample-annotation-20240610.txt")
