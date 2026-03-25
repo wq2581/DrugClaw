@@ -18,10 +18,16 @@ import csv
 import os
 import re
 import json
+from pathlib import Path
 from typing import Optional
 
 # ── data paths ──────────────────────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_repurposing/DrugRepoBank"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_repurposing"
+    / "DrugRepoBank"
+)
 DRUG_PATH = os.path.join(DATA_DIR, "Drug.csv")
 DTI_PATH = os.path.join(DATA_DIR, "DrugTargetInteraction.csv")
 LIT_PATH = os.path.join(DATA_DIR, "Literature.csv")

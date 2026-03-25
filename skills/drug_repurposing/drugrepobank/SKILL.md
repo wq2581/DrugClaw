@@ -49,6 +49,6 @@ Four CSV tables in `DATA_DIR`:
 | `Targets.csv` | TargetID, UniprotID, TargetName, TargetGeneName, TargetType, Function | Target annotations & pathway memberships |
 
 - **Path**: `DATA_DIR` variable in `42_DrugRepoBank.py`  
-  (`/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_repurposing/DrugRepoBank`)
+  (`resources_metadata/drug_repurposing/DrugRepoBank`)
 - **Source**: https://awi.cuhk.edu.cn/DrugRepoBank/php/index.php
 - **Paper**: Huang et al., *Database* 2024, baae051. DOI:10.1093/database/baae051

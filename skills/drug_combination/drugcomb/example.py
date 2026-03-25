@@ -13,11 +13,15 @@ Access method: Local CSV (summary_table_v1.4.csv from Zenodo).
 import csv
 import json
 import re
+from pathlib import Path
 from typing import Optional
 
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_combination/DrugComb/summary_table_v1.4.csv"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_combination"
+    / "DrugComb"
+    / "summary_table_v1.4.csv"
 )
 
 # ---------------------------------------------------------------------------

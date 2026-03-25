@@ -15,10 +15,13 @@ Access method: Local flat files downloaded from ADReCS v3.3.
 import os
 import re
 import pandas as pd
+from pathlib import Path
 from typing import Optional, Union
 
 # ── Data paths ──────────────────────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/adr/ADReCS"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3] / "resources_metadata" / "adr" / "ADReCS"
+)
 
 DRUG_ADR_FILE = os.path.join(DATA_DIR, "Drug_ADR_v3.3.txt")
 DRUG_INFO_FILE = os.path.join(DATA_DIR, "Drug_information_v3.3.xlsx")

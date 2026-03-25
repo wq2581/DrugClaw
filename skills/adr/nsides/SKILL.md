@@ -75,7 +75,7 @@ single-drug query, batch query, text summary, and JSON output.
 | `event.csv.gz` | `DATA_DIR/event.csv.gz` | KidSIDES event dictionary |
 | `dictionary.csv.gz` | `DATA_DIR/dictionary.csv.gz` | NICHD phase dictionary |
 
-`DATA_DIR` default: `/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/adr/nSIDES`
+`DATA_DIR` default: `resources_metadata/adr/nSIDES`
 
 ## Citations
 

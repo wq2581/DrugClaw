@@ -8,8 +8,17 @@ cadec_combined.json (produced by build_cadec_json.py from BRAT files).
 """
 
 import json, os, re
+from pathlib import Path
 
-DATA_PATH = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/CADEC/data/cadec/cadec_combined.json"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_nlp"
+    / "CADEC"
+    / "data"
+    / "cadec"
+    / "cadec_combined.json"
+)
 
 # ── data loading ─────────────────────────────────────────────────────
 

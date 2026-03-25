@@ -16,11 +16,17 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+from pathlib import Path
 from typing import Optional
 
 # ── Paths ────────────────────────────────────────────────────────────
-DATA_DIR  = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_ontology/ATC_DDD"
-XLSX_PATH = f"{DATA_DIR}/ATC_DDD_new and alterations 2026_final.xlsx"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_ontology"
+    / "ATC_DDD"
+)
+XLSX_PATH = str(Path(DATA_DIR) / "ATC_DDD_new and alterations 2026_final.xlsx")
 
 RXNAV_BASE = "https://rxnav.nlm.nih.gov/REST"
 

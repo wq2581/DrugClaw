@@ -16,10 +16,16 @@ or free-text entity name.
 import csv
 import os
 import re
+from pathlib import Path
 from collections import defaultdict
 
 # ── paths ──────────────────────────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_repurposing/OREGANO"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_repurposing"
+    / "OREGANO"
+)
 TRIPLET_FILE = os.path.join(DATA_DIR, "OREGANO_V2.1.tsv")
 
 META_FILES = {

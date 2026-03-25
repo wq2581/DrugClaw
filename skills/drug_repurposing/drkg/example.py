@@ -13,12 +13,18 @@ Access method: Local TSV files (drkg.tsv, relation_glossary.tsv, entity2src.tsv)
 import os
 import re
 import csv
+from pathlib import Path
 from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # Path configuration
 # ---------------------------------------------------------------------------
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_repurposing/DRKG"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_repurposing"
+    / "DRKG"
+)
 DRKG_TSV = os.path.join(DATA_DIR, "drkg.tsv")
 GLOSSARY_TSV = os.path.join(DATA_DIR, "relation_glossary.tsv")
 ENTITY2SRC_TSV = os.path.join(DATA_DIR, "entity2src.tsv")

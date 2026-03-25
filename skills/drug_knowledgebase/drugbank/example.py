@@ -4,8 +4,8 @@ Category: Drug-centric | Type: DB | Subcategory: Drug Knowledgebase
 Source : https://go.drugbank.com/releases/latest  (free account required)
 
 Data location (fixed):
-  XML : /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugBank/full database.xml
-  CSV : /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugBank/drugbank vocabulary.csv
+  XML : resources_metadata/drug_knowledgebase/DrugBank/full database.xml
+  CSV : resources_metadata/drug_knowledgebase/DrugBank/drugbank vocabulary.csv
 
 Supports two data formats (auto-selected, XML preferred):
   • Full XML  – rich fields (description, targets, interactions, categories …)
