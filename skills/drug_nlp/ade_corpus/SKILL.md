@@ -10,7 +10,7 @@
 | Subcategory | Drug NLP / Text Mining |
 | Source | [GitHub](https://github.com/trunghlt/AdverseDrugReaction/tree/master/ADE-Corpus-V2) |
 | Paper | [ACL 2016](https://aclanthology.org/C16-1084/) |
-| Local Path | `/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/ADECorpus/ADE-Corpus-V2` |
+| Local Path | `resources_metadata/drug_nlp/ADECorpus/ADE-Corpus-V2` |
 
 ## Data Files
 

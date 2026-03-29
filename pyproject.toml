@@ -7,7 +7,7 @@ name = "drugclaw"
 version = "0.1.0"
 description = "Agentic system with Synaptic Navigation for Evidence-based Drug Reasoning"
 authors = [{name = "Qing Wang"}]
-dependencies = ["langgraph", "openai", "requests"]
+dependencies = ["langgraph", "openai", "requests", "fastapi", "uvicorn", "httpx"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -20,6 +20,9 @@ package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+drugclaw = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -15,13 +15,19 @@ Skill interface:
 
 import os
 import re
+from pathlib import Path
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # Data path  (gold_xml = test set with annotations, train_xml = training set)
 # ---------------------------------------------------------------------------
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/TAC2017ADR"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_nlp"
+    / "TAC2017ADR"
+)
 _ANNOTATED_DIRS = ["gold_xml", "train_xml"]
 
 # ---------------------------------------------------------------------------

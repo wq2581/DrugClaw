@@ -4,8 +4,8 @@ Category: Drug-centric | Type: DB | Subcategory: Drug Knowledgebase
 Source : https://go.drugbank.com/releases/latest  (free account required)
 
 Data location (fixed):
-  XML : /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugBank/full database.xml
-  CSV : /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugBank/drugbank vocabulary.csv
+  XML : resources_metadata/drug_knowledgebase/DrugBank/full database.xml
+  CSV : resources_metadata/drug_knowledgebase/DrugBank/drugbank vocabulary.csv
 
 Supports two data formats (auto-selected, XML preferred):
   • Full XML  – rich fields (description, targets, interactions, categories …)
@@ -13,12 +13,25 @@ Supports two data formats (auto-selected, XML preferred):
 """
 
 import os, csv, json, re
+from pathlib import Path
 from typing import Union
 
 # ── Config ──────────────────────────────────────────────────────────────
-_BASE = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_knowledgebase/DrugBank"
-VOCAB_PATH = os.path.join(_BASE, "drugbank vocabulary.csv")   # lightweight
-XML_PATH   = os.path.join(_BASE, "full database.xml")         # rich fields
+def _resolve_base_dir() -> Path:
+    override = os.environ.get("DRUGBANK_DIR")
+    if override:
+        return Path(override)
+    return (
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "drug_knowledgebase"
+        / "DrugBank"
+    )
+
+
+_BASE = _resolve_base_dir()
+VOCAB_PATH = str(_BASE / "drugbank vocabulary.csv")   # lightweight
+XML_PATH   = str(_BASE / "full database.xml")         # rich fields
 DATA_PATH  = XML_PATH if os.path.exists(XML_PATH) else VOCAB_PATH
 
 # ── Loaders ─────────────────────────────────────────────────────────────

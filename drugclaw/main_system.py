@@ -47,6 +47,7 @@ from .agent_reflector import ReflectorAgent
 from .agent_websearch import WebSearchAgent
 from .claim_assessment import assess_claims
 from .drug_name_normalizer import DrugNameNormalizer
+from .structured_input_resolver import StructuredInputResolver
 from .query_logger import QueryLogger, QuerySession
 from .response_formatter import wrap_answer_card
 from .resource_registry import build_resource_registry
@@ -78,6 +79,7 @@ class DrugClawSystem:
 
         # LLM
         self.llm_client = LLMClient(config)
+        self.structured_input_resolver = StructuredInputResolver.default(config)
         self.drug_name_normalizer = DrugNameNormalizer.default()
 
         # Runtime skill registry; the resource registry derives authoritative
@@ -431,6 +433,49 @@ class DrugClawSystem:
         return {"drug": resolved_drugs}
 
     @staticmethod
+    def _merge_input_resolution(
+        identifier_resolution: Dict[str, Any],
+        name_resolution: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged_resolution = dict(name_resolution)
+        merged_resolution["identifier_resolution"] = identifier_resolution
+        merged_resolution["original_query"] = identifier_resolution.get(
+            "original_query",
+            name_resolution.get("original_query", ""),
+        )
+        merged_resolution["normalized_query"] = name_resolution.get(
+            "normalized_query",
+            identifier_resolution.get("normalized_query", ""),
+        )
+
+        canonical_drug_names = list(
+            merged_resolution.get("canonical_drug_names", []) or []
+        )
+        if not canonical_drug_names:
+            for record in identifier_resolution.get("resolved_records", []) or []:
+                canonical_name = (
+                    record.get("canonical_drug_name")
+                    or record.get("canonical_name")
+                    or ""
+                )
+                canonical_name = str(canonical_name).strip()
+                if canonical_name and canonical_name not in canonical_drug_names:
+                    canonical_drug_names.append(canonical_name)
+            if canonical_drug_names:
+                merged_resolution["canonical_drug_names"] = canonical_drug_names
+
+        if canonical_drug_names:
+            merged_resolution["status"] = (
+                "resolved" if len(canonical_drug_names) == 1 else "ambiguous"
+            )
+        elif identifier_resolution.get("status") == "error":
+            merged_resolution["status"] = "error"
+        elif identifier_resolution.get("status") == "ambiguous":
+            merged_resolution["status"] = "ambiguous"
+
+        return merged_resolution
+
+    @staticmethod
     def _merge_resolved_entities_into_query_plan(query_plan, resolved_entities):
         if query_plan is None or not resolved_entities:
             return query_plan
@@ -489,7 +534,25 @@ class DrugClawSystem:
         normalized_mode: str | None = None
         try:
             normalized_mode = self._normalize_thinking_mode(thinking_mode)
-            input_resolution = self.drug_name_normalizer.normalize_query(query)
+            identifier_resolution = {
+                "original_query": query,
+                "normalized_query": query,
+                "status": "unresolved",
+                "detected_identifiers": [],
+                "resolved_records": [],
+                "errors": [],
+            }
+            if getattr(self.config, "ENABLE_STRUCTURED_IDENTIFIER_RESOLUTION", True):
+                identifier_resolution = self.structured_input_resolver.resolve_query(
+                    query
+                )
+            input_resolution = self.drug_name_normalizer.normalize_query(
+                identifier_resolution.get("normalized_query") or query
+            )
+            input_resolution = self._merge_input_resolution(
+                identifier_resolution,
+                input_resolution,
+            )
             normalized_query = (
                 input_resolution.get("normalized_query")
                 or query

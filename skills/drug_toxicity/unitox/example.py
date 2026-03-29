@@ -14,12 +14,16 @@ Access: local CSV (tab-separated).
 import csv
 import os
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 # ── Path to the local UniTox TSV ──────────────────────────────────────
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_toxicity/UniTox/UniTox.csv"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_toxicity"
+    / "UniTox"
+    / "UniTox.csv"
 )
 
 # ── Eight organ-system toxicity categories ────────────────────────────

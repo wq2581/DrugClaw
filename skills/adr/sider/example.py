@@ -12,11 +12,14 @@ returns related records from SIDER tables.
 import os
 import csv
 import gzip
+from pathlib import Path
 from collections import defaultdict
 from typing import Union
 
 # ── Data path ────────────────────────────────────────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/adr/SIDER"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3] / "resources_metadata" / "adr" / "SIDER"
+)
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

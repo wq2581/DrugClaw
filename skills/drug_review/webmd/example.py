@@ -13,11 +13,15 @@ Access: Download CSV from Kaggle → place at DATA_PATH below.
 
 import os
 import csv
+from pathlib import Path
 from collections import defaultdict
 
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_review/WebMDDrugReviews/webmd.csv"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_review"
+    / "WebMDDrugReviews"
+    / "webmd.csv"
 )
 
 # ── helpers ────────────────────────────────────────────────────────────

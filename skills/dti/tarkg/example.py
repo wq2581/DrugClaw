@@ -16,11 +16,17 @@ import csv
 import json
 import sqlite3
 import glob
+from pathlib import Path
 
 # ── Default data path (change to your local path) ──────────────────────────
 DATA_DIR = os.environ.get(
     "TARKG_DATA",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/dti/TarKG",
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "dti"
+        / "TarKG"
+    ),
 )
 DB_PATH = os.path.join(DATA_DIR, ".tarkg_index.db")
 

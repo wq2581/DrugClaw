@@ -16,6 +16,7 @@ Setup:
 """
 
 import os, sys, json, glob
+from pathlib import Path
 import pandas as pd
 from typing import Union
 
@@ -31,7 +32,12 @@ except ImportError:
 # ── configure path ──────────────────────────────────────────────────
 DATA_DIR = os.environ.get(
     "GDSC_DATA_DIR",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_molecular_property/GDSC",
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "drug_molecular_property"
+        / "GDSC"
+    ),
 )
 
 # ── download URLs ───────────────────────────────────────────────────

@@ -14,13 +14,19 @@ Setup:
 """
 
 import os, sys, json, glob
+from pathlib import Path
 import pandas as pd
 from typing import Union
 
 # ── configure path ──────────────────────────────────────────────────
 DATA_DIR = os.environ.get(
     "DILI_DATA_DIR",
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_toxicity/DILI",
+    str(
+        Path(__file__).resolve().parents[3]
+        / "resources_metadata"
+        / "drug_toxicity"
+        / "DILI"
+    ),
 )
 
 

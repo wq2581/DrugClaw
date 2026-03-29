@@ -10,11 +10,18 @@ Query interface for the ADE Corpus v2. Accepts one or more entity names
 
 import os
 import json
+from pathlib import Path
 from collections import defaultdict
 from typing import Union
 
 # === CONFIGURE THIS PATH ===
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_nlp/ADECorpus/ADE-Corpus-V2"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_nlp"
+    / "ADECorpus"
+    / "ADE-Corpus-V2"
+)
 
 
 def _load_drug_ae(data_dir: str) -> list[dict]:

@@ -17,13 +17,17 @@ import csv
 import json
 import os
 import re
+from pathlib import Path
 from typing import Union
 
 # ── data path (edit to match your environment) ────────────────────────
 
-DATA_DIR = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_combination/DrugCombDB/drugcombdb_data"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_combination"
+    / "DrugCombDB"
+    / "drugcombdb_data"
 )
 
 # ── lazy-load cache ───────────────────────────────────────────────────

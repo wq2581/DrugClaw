@@ -36,6 +36,32 @@ class Config:
         self.TEMPERATURE = data.get("temperature", 0.7)
         self.MAX_TOKENS = data.get("max_tokens", 2000)
         self.TIMEOUT = data.get("timeout", 60)
+        self.ENABLE_STRUCTURED_IDENTIFIER_RESOLUTION = data.get(
+            "enable_structured_identifier_resolution",
+            True,
+        )
+        self.STRUCTURED_IDENTIFIER_TIMEOUT = data.get(
+            "structured_identifier_timeout",
+            5,
+        )
+        self.STRUCTURED_IDENTIFIER_CACHE_SIZE = data.get(
+            "structured_identifier_cache_size",
+            256,
+        )
+        self.SERVER_HOST = data.get("server_host", "127.0.0.1")
+        self.SERVER_PORT = int(data.get("server_port", 8000))
+        self.SERVER_MAX_CONCURRENCY = int(data.get("server_max_concurrency", 1))
+        self.SERVER_QUERY_TIMEOUT_SECONDS = int(
+            data.get("server_query_timeout_seconds", 120)
+        )
+        self.SERVER_DEFAULT_MODE = data.get(
+            "server_default_mode",
+            "simple",
+        )
+        self.SERVER_ENABLE_GRAPH_MODE = bool(
+            data.get("server_enable_graph_mode", False)
+        )
+        self.SERVER_MAX_QUERY_CHARS = int(data.get("server_max_query_chars", 5000))
 
         # System parameters
         self.MAX_ITERATIONS = 2

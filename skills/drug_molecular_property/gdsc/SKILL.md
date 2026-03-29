@@ -24,7 +24,7 @@ DATA_DIR/
 
 Default `DATA_DIR`:
 ```
-/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_molecular_property/GDSC
+resources_metadata/drug_molecular_property/GDSC
 ```
 
 Override via environment variable: `export GDSC_DATA_DIR=/your/path`
@@ -46,10 +46,10 @@ The script auto-downloads all data files (drug list CSV + GDSC1/GDSC2 dose-respo
 python 60_GDSC_GDSC2.py
 ```
 
-If auto-download fails (e.g. no internet on HPC compute node), download manually on a login node:
+If auto-download fails (e.g. no internet on HPC compute node), download manually from the repository root:
 
 ```bash
-cd /blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/drug_molecular_property/GDSC
+cd resources_metadata/drug_molecular_property/GDSC
 wget 'https://ftp.sanger.ac.uk/pub/project/cancerrxgene/releases/current_release/screened_compounds_rel_8.4.csv'
 wget 'https://cog.sanger.ac.uk/cancerrxgene/GDSC_data_8.5/GDSC1_fitted_dose_response_27Oct23.xlsx'
 wget 'https://cog.sanger.ac.uk/cancerrxgene/GDSC_data_8.5/GDSC2_fitted_dose_response_27Oct23.xlsx'

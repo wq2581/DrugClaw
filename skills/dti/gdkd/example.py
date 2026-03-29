@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 # ── data path ────────────────────────────────────────────────────────
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/dti/GDKD/Knowledge_database_v20.0.xlsx"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "dti"
+    / "GDKD"
+    / "Knowledge_database_v20.0.xlsx"
 )
 
 # ── column constants ─────────────────────────────────────────────────

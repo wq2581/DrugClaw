@@ -14,15 +14,19 @@ Access method: Local CSV (raw_PharmKG-180k.csv).
 import csv
 import json
 import sys
+from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
 # PharmKG CSV contains entity-embedding columns with very long values.
 csv.field_size_limit(sys.maxsize)
 
-DATA_PATH = (
-    "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/"
-    "resources_metadata/drug_knowledgebase/PharmKG/raw_PharmKG-180k.csv"
+DATA_PATH = str(
+    Path(__file__).resolve().parents[3]
+    / "resources_metadata"
+    / "drug_knowledgebase"
+    / "PharmKG"
+    / "raw_PharmKG-180k.csv"
 )
 
 # Triple stored as lightweight (entity1, relation, entity2) tuple.

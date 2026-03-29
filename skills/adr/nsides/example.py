@@ -21,10 +21,13 @@ import io
 import json
 import os
 import sqlite3
+from pathlib import Path
 from typing import Union
 
 # ── paths (adjust to your environment) ──────────────────────
-DATA_DIR = "/blue/qsong1/wang.qing/AgentLLM/DrugClaw/resources_metadata/adr/nSIDES"
+DATA_DIR = str(
+    Path(__file__).resolve().parents[3] / "resources_metadata" / "adr" / "nSIDES"
+)
 
 ONSIDES_DB   = os.path.join(DATA_DIR, "onsides.db")
 OFFSIDES_GZ  = os.path.join(DATA_DIR, "OFFSIDES.csv.gz")
