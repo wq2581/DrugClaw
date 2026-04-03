@@ -147,12 +147,21 @@ Rules:
         elif raw_question_type_key != question_type:
             use_fallback_skills = True
 
+        strong_path_question_types = {
+            "drug_repurposing",
+            "mechanism",
+            "pharmacogenomics",
+        }
         preferred_skills = self._normalize_list(payload.get("preferred_skills"))
-        if use_fallback_skills or not preferred_skills:
+        if (
+            use_fallback_skills
+            or not preferred_skills
+            or question_type in strong_path_question_types
+        ):
             preferred_skills = fallback.preferred_skills
 
         requires_graph_reasoning = bool(payload.get("requires_graph_reasoning", False))
-        if use_fallback_skills:
+        if use_fallback_skills or question_type in strong_path_question_types:
             requires_graph_reasoning = fallback.requires_graph_reasoning
 
         return QueryPlan(

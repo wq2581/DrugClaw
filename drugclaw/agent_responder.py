@@ -11,6 +11,8 @@ from .evidence import ClaimSummary, FinalAnswer, score_answer_confidence, score_
 from .models import AgentState, EvidencePath
 from .llm_client import LLMClient
 from .query_plan import infer_entities_from_query, infer_question_type_from_query
+from .task_evidence_policy import classify_evidence_item
+from .web_evidence import build_task_aware_web_section, build_web_citations, summarize_web_results
 
 class ResponderAgent:
     """
@@ -281,6 +283,8 @@ Formatting requirements:
     def _should_return_insufficient_answer(state: AgentState) -> bool:
         if state.evidence_items:
             return False
+        if getattr(state, "web_search_results", []):
+            return False
 
         raw = getattr(state, "retrieved_content", []) or []
         if not raw:
@@ -297,6 +301,7 @@ Formatting requirements:
         return True
 
     def _build_insufficient_final_answer(self, state: AgentState) -> FinalAnswer:
+        query_type = infer_question_type_from_query(state.original_query)
         diagnostics = getattr(state, "retrieval_diagnostics", []) or []
         warnings = ["No structured evidence was retrieved for this query."]
         limitations = ["The current run did not return any structured evidence items."]
@@ -309,8 +314,27 @@ Formatting requirements:
             skill = item.get("skill", "?")
             error = item.get("error", "")
             records = item.get("records", 0)
-            if error:
-                diagnostic_lines.append(f"- {skill}: {error}")
+            final_status = item.get("final_status", "")
+            structured_status = item.get("structured_status", "")
+            structured_error = self._summarize_diagnostic_error(
+                item.get("structured_error", "")
+            )
+            if final_status == "success_text_only":
+                diagnostic_lines.append(
+                    f"- {skill}: text-only fallback output was available, but no structured records were produced"
+                )
+            elif structured_status == "error":
+                detail = structured_error or self._summarize_diagnostic_error(error)
+                if detail:
+                    diagnostic_lines.append(
+                        f"- {skill}: structured retrieval failed ({detail})"
+                    )
+                else:
+                    diagnostic_lines.append(f"- {skill}: structured retrieval failed")
+            elif error:
+                diagnostic_lines.append(
+                    f"- {skill}: {self._summarize_diagnostic_error(error)}"
+                )
             elif not records:
                 diagnostic_lines.append(f"- {skill}: no records returned")
 
@@ -343,13 +367,29 @@ Formatting requirements:
             citations=[],
             limitations=limitations,
             warnings=warnings,
+            task_type=query_type,
+            final_outcome="honest_gap",
+            diagnostics={
+                "retrieval_diagnostic_count": len(diagnostics),
+                "strong_record_count": 0,
+                "secondary_official_support_count": 0,
+                "weak_support_count": 0,
+            },
         )
+
+    @staticmethod
+    def _summarize_diagnostic_error(error: str) -> str:
+        text = str(error or "").strip()
+        if not text:
+            return ""
+        return text.splitlines()[0].strip()[:180]
 
     def _respond_from_evidence(self, state: AgentState) -> None:
         final_answer = self._build_final_answer(
             state.original_query,
             state.evidence_items,
             claim_assessments=state.claim_assessments,
+            web_search_results=getattr(state, "web_search_results", []),
         )
         state.final_answer_structured = final_answer
         state.current_answer = final_answer.answer_text
@@ -364,7 +404,9 @@ Formatting requirements:
         query: str,
         evidence_items,
         claim_assessments: List[ClaimAssessment] | None = None,
+        web_search_results: List[Dict[str, Any]] | None = None,
     ) -> FinalAnswer:
+        query_type = infer_question_type_from_query(query)
         if not evidence_items:
             return FinalAnswer(
                 answer_text=(
@@ -377,11 +419,14 @@ Formatting requirements:
                 citations=[],
                 limitations=["No structured evidence items were available."],
                 warnings=["Insufficient evidence."],
+                task_type=query_type,
+                final_outcome="honest_gap",
+                diagnostics={"strong_record_count": 0, "weak_support_count": 0},
             )
 
         filtered_items = list(evidence_items)
-        query_type = infer_question_type_from_query(query)
-        if self._is_target_lookup_query(query):
+        is_target_lookup = self._is_target_lookup_query(query, query_type)
+        if is_target_lookup:
             filtered_items = self._filter_target_evidence_items(filtered_items) or filtered_items
         elif query_type in {"ddi", "ddi_mechanism"}:
             filtered_items = self._filter_ddi_evidence_items(filtered_items) or filtered_items
@@ -391,7 +436,7 @@ Formatting requirements:
             filtered_items = self._filter_adr_evidence_items(filtered_items) or filtered_items
         elif query_type == "labeling":
             filtered_items = self._filter_labeling_evidence_items(query, filtered_items) or filtered_items
-        if not self._is_target_lookup_query(query):
+        if not is_target_lookup:
             self._semanticize_claims_for_query_type(query_type, filtered_items)
 
         assessments = list(claim_assessments or [])
@@ -404,18 +449,72 @@ Formatting requirements:
                 if assessment.claim in allowed_claims
             ]
 
-        claims = (
-            self._summarize_target_claims(query, filtered_items, assessments)
-            if self._is_target_lookup_query(query)
-            else self._summarize_claims(filtered_items, assessments)
-        )
+        if query_type == "mechanism":
+            _, _, target_claims, mechanism_claims = self._mechanism_claim_groups(
+                query,
+                filtered_items,
+                assessments,
+            )
+            claims = []
+            seen_claims = set()
+            for claim in target_claims + mechanism_claims:
+                if claim.claim in seen_claims:
+                    continue
+                seen_claims.add(claim.claim)
+                claims.append(claim)
+        elif is_target_lookup:
+            claims = self._summarize_target_claims(query, filtered_items, assessments)
+        else:
+            claims = self._summarize_claims(filtered_items, assessments)
         warnings = self._build_warnings(assessments, claims, filtered_items)
         limitations = self._build_limitations(assessments, claims, filtered_items)
         citations = self._build_citations(filtered_items)
+        web_section = build_task_aware_web_section(query_type, web_search_results or [])
+        web_summaries = summarize_web_results(web_search_results or [])
+        citations.extend(build_web_citations(web_search_results or []))
+        final_outcome, diagnostics = self._compute_task_outcome(
+            query_type,
+            filtered_items,
+            claims,
+        )
         answer_text = (
-            self._render_target_answer(query, claims, warnings, limitations)
-            if self._is_target_lookup_query(query)
-            else self._render_answer_text(query, claims, warnings, limitations)
+            self._render_repurposing_answer(
+                query,
+                filtered_items,
+                warnings,
+                limitations,
+                web_section or ("Authority-first web evidence:", web_summaries),
+            )
+            if query_type == "drug_repurposing"
+            else (
+                self._render_mechanism_answer(
+                    query,
+                    filtered_items,
+                    assessments,
+                    warnings,
+                    limitations,
+                    web_section or ("Authority-first web evidence:", web_summaries),
+                )
+                if query_type == "mechanism"
+                else (
+                    self._render_target_answer(
+                        query,
+                        claims,
+                        warnings,
+                        limitations,
+                        web_section or ("Authority-first web evidence:", web_summaries),
+                    )
+                    if is_target_lookup
+                    else self._render_answer_text(
+                        query,
+                        query_type,
+                        claims,
+                        warnings,
+                        limitations,
+                        web_section or ("Authority-first web evidence:", web_summaries),
+                    )
+                )
+            )
         )
 
         return FinalAnswer(
@@ -426,12 +525,15 @@ Formatting requirements:
             citations=citations,
             limitations=limitations,
             warnings=warnings,
+            task_type=query_type,
+            final_outcome=final_outcome,
+            diagnostics=diagnostics,
         )
 
     @staticmethod
-    def _is_target_lookup_query(query: str) -> bool:
-        lowered = (query or "").lower()
-        return "target" in lowered
+    def _is_target_lookup_query(query: str, query_type: str = "") -> bool:
+        normalized_query_type = str(query_type or infer_question_type_from_query(query)).strip().lower()
+        return normalized_query_type == "target_lookup"
 
     def _filter_target_evidence_items(self, evidence_items) -> List[Any]:
         filtered = []
@@ -633,8 +735,12 @@ Formatting requirements:
     def _semantic_claim_for_item(self, query_type: str, item: Any) -> str:
         if query_type in {"ddi", "ddi_mechanism"}:
             return self._ddi_claim_for_item(item)
+        if query_type == "drug_repurposing":
+            return self._repurposing_claim_for_item(item)
         if query_type == "labeling":
             return self._labeling_claim_for_item(item)
+        if query_type == "mechanism":
+            return self._mechanism_claim_for_item(item)
         if query_type == "pharmacogenomics":
             return self._pgx_claim_for_item(item)
         if query_type == "adr":
@@ -698,6 +804,58 @@ Formatting requirements:
                 return f"{source_entity} official label summary: {snippet}"
             if target_entity:
                 return f"{source_entity} official label available: {target_entity}"
+        return ""
+
+    def _repurposing_claim_for_item(self, item: Any) -> str:
+        source_entity = str(item.metadata.get("source_entity", "")).strip()
+        relationship = str(item.metadata.get("relationship", "")).strip().lower()
+        target_entity = str(item.metadata.get("target_entity", "")).strip()
+        target_type = str(item.metadata.get("target_type", "")).strip().lower()
+        snippet = self._clean_label_text(str(getattr(item, "snippet", "") or ""))
+        phase = str(
+            item.structured_payload.get("phase")
+            or item.structured_payload.get("highest_phase")
+            or ""
+        ).strip()
+        status = str(item.structured_payload.get("status") or "").strip()
+
+        if relationship == "repurposing_evidence" and source_entity and target_entity:
+            details = [detail for detail in (status, phase) if detail]
+            suffix = f" ({'; '.join(details)})" if details else ""
+            return f"{source_entity} has repurposing evidence for {target_entity}{suffix}"
+        if relationship == "indicated_for" and source_entity and target_entity:
+            if target_type == "disease":
+                return f"{source_entity} is indicated for {target_entity}"
+            if snippet:
+                return f"{source_entity} label support: {snippet}"
+        if relationship == "has_official_label":
+            if snippet:
+                return f"{source_entity} official label context: {snippet}"
+            if target_entity:
+                return f"{source_entity} official label available: {target_entity}"
+        if relationship == "has_approved_entry":
+            return f"{source_entity} has an approved-entry roster in DrugCentral"
+        return ""
+
+    def _mechanism_claim_for_item(self, item: Any) -> str:
+        source_entity = str(item.metadata.get("source_entity", "")).strip()
+        relationship = str(item.metadata.get("relationship", "")).strip().lower()
+        target_entity = str(item.metadata.get("target_entity", "")).strip()
+        snippet = self._clean_label_text(str(getattr(item, "snippet", "") or ""))
+        mechanism = str(
+            item.structured_payload.get("mechanism_of_action")
+            or item.metadata.get("mechanism_of_action")
+            or ""
+        ).strip()
+
+        if self._is_mechanism_evidence_item(item):
+            mechanism_text = mechanism or snippet or target_entity
+            if mechanism_text:
+                return f"{source_entity} mechanism: {mechanism_text}"
+        if self._is_target_evidence_item(item) and source_entity and target_entity:
+            return f"{source_entity} targets {target_entity}."
+        if "mechanism" in relationship and source_entity and target_entity:
+            return f"{source_entity} mechanism involves {target_entity}"
         return ""
 
     def _pgx_claim_for_item(self, item: Any) -> str:
@@ -947,12 +1105,358 @@ Formatting requirements:
                 citations.append(citation)
         return citations
 
+    def _compute_task_outcome(
+        self,
+        query_type: str,
+        evidence_items,
+        claims: List[ClaimSummary],
+    ) -> tuple[str, Dict[str, Any]]:
+        if query_type == "drug_repurposing":
+            sections, diagnostics = self._partition_repurposing_items(evidence_items)
+            if sections["repurposing_evidence"]:
+                return "strong_answer", diagnostics
+            if evidence_items:
+                return "partial_with_weak_support", diagnostics
+            return "honest_gap", diagnostics
+
+        if query_type == "mechanism":
+            target_items = [item for item in evidence_items if self._is_target_evidence_item(item)]
+            mechanism_items = [item for item in evidence_items if self._is_mechanism_evidence_item(item)]
+            diagnostics = {
+                "target_support_count": len(target_items),
+                "mechanism_support_count": len(mechanism_items),
+                "coverage_gap": not mechanism_items,
+            }
+            if target_items and mechanism_items:
+                return "strong_answer", diagnostics
+            if target_items or mechanism_items:
+                return "partial_with_weak_support", diagnostics
+            return "honest_gap", diagnostics
+
+        if query_type == "pharmacogenomics":
+            strong_items = [item for item in evidence_items if self._is_strong_pgx_item(item)]
+            diagnostics = {
+                "strong_record_count": len(strong_items),
+                "weak_support_count": max(0, len(evidence_items) - len(strong_items)),
+            }
+            if strong_items:
+                return "strong_answer", diagnostics
+            if evidence_items:
+                return "partial_with_weak_support", diagnostics
+            return "honest_gap", diagnostics
+
+        diagnostics = {
+            "evidence_count": len(evidence_items),
+            "claim_count": len(claims),
+        }
+        if query_type == "adr" and not claims:
+            return "honest_gap", diagnostics
+        if claims:
+            return "partial_with_weak_support", diagnostics
+        return "honest_gap", diagnostics
+
+    @staticmethod
+    def _is_target_evidence_item(item: Any) -> bool:
+        relationship = str(item.metadata.get("relationship", "")).lower()
+        target_entity = str(item.metadata.get("target_entity", "")).strip()
+        target_type = str(item.metadata.get("target_type", "")).lower()
+        claim_lower = str(getattr(item, "claim", "")).lower()
+
+        if relationship in {"search_hit", "drug_lookup", "disease_lookup", "target_info"}:
+            return False
+        if any(noise in claim_lower for noise in ("search_hit", "unchecked", "no relevant target")):
+            return False
+        if target_type in {"cell_line", "disease", "drug_info", "disease_info", "unknown", "label_section"}:
+            return False
+        if target_entity and ResponderAgent._looks_like_cell_line(target_entity):
+            return False
+        return bool(
+            relationship
+            and any(
+                marker in relationship
+                for marker in (
+                    "activity",
+                    "target",
+                    "bind",
+                    "inhib",
+                    "agon",
+                    "antagon",
+                    "substr",
+                    "modulat",
+                    "block",
+                    "activat",
+                )
+            )
+        )
+
+    @staticmethod
+    def _is_mechanism_evidence_item(item: Any) -> bool:
+        relationship = str(item.metadata.get("relationship", "")).lower()
+        structured_payload = getattr(item, "structured_payload", {}) or {}
+        metadata = getattr(item, "metadata", {}) or {}
+        return bool(
+            "mechanism" in relationship
+            or structured_payload.get("mechanism_of_action")
+            or metadata.get("mechanism_of_action")
+        )
+
+    @staticmethod
+    def _is_strong_pgx_item(item: Any) -> bool:
+        source_skill = str(getattr(item, "source_skill", "")).strip()
+        relationship = str(item.metadata.get("relationship", "")).strip().lower()
+        cpic_level = str(item.structured_payload.get("cpiclevel") or "").strip()
+        clinpgx_level = str(item.structured_payload.get("clinpgxlevel") or "").strip()
+        actionable = bool(item.structured_payload.get("usedforrecommendation"))
+        return bool(
+            source_skill in {"CPIC", "PharmGKB"}
+            and (
+                "guideline" in relationship
+                or cpic_level
+                or clinpgx_level
+                or actionable
+            )
+        )
+
+    def _partition_repurposing_items(self, evidence_items) -> tuple[Dict[str, List[Any]], Dict[str, Any]]:
+        sections = {
+            "approved_indications": [],
+            "repurposing_evidence": [],
+            "supporting_signals": [],
+        }
+        diagnostics: Dict[str, Any] = {
+            "strong_sources_attempted": ["RepoDB", "DrugCentral", "DrugBank"],
+            "strong_record_count": 0,
+            "secondary_official_support_count": 0,
+            "weak_support_count": 0,
+        }
+
+        for item in evidence_items:
+            classification = classify_evidence_item("drug_repurposing", item)
+            if classification.slot == "approved_indications":
+                sections["approved_indications"].append(item)
+            elif classification.slot == "repurposing_evidence":
+                sections["repurposing_evidence"].append(item)
+            else:
+                sections["supporting_signals"].append(item)
+
+            if classification.tier == "strong_structured":
+                diagnostics["strong_record_count"] += 1
+            elif classification.tier == "secondary_official_support":
+                diagnostics["secondary_official_support_count"] += 1
+            else:
+                diagnostics["weak_support_count"] += 1
+
+        diagnostics["approved_indication_record_count"] = len(sections["approved_indications"])
+        diagnostics["repurposing_record_count"] = len(sections["repurposing_evidence"])
+        diagnostics["local_primary_missing"] = len(sections["repurposing_evidence"]) == 0
+        diagnostics["online_weak_fallback_used"] = (
+            diagnostics["secondary_official_support_count"] > 0
+            or diagnostics["weak_support_count"] > 0
+        )
+        return sections, diagnostics
+
+    @staticmethod
+    def _subset_assessments_for_items(
+        assessments: List[ClaimAssessment],
+        items,
+    ) -> List[ClaimAssessment]:
+        allowed_claims = {item.claim for item in items}
+        return [
+            assessment
+            for assessment in assessments
+            if assessment.claim in allowed_claims
+        ]
+
+    def _mechanism_claim_groups(
+        self,
+        query: str,
+        evidence_items,
+        assessments: List[ClaimAssessment],
+    ) -> tuple[List[Any], List[Any], List[ClaimSummary], List[ClaimSummary]]:
+        target_items = [item for item in evidence_items if self._is_target_evidence_item(item)]
+        mechanism_items = [item for item in evidence_items if self._is_mechanism_evidence_item(item)]
+        target_claims = (
+            self._summarize_target_claims(
+                query,
+                target_items,
+                self._subset_assessments_for_items(assessments, target_items),
+            )
+            if target_items
+            else []
+        )
+        mechanism_claims = (
+            self._summarize_claims(
+                mechanism_items,
+                self._subset_assessments_for_items(assessments, mechanism_items),
+            )
+            if mechanism_items
+            else []
+        )
+        return target_items, mechanism_items, target_claims, mechanism_claims
+
+    @staticmethod
+    def _format_item_lines(items, empty_message: str, limit: int = 5) -> List[str]:
+        seen = set()
+        lines: List[str] = []
+        for item in items:
+            text = str(getattr(item, "claim", "") or getattr(item, "snippet", "")).strip()
+            if not text:
+                continue
+            dedupe_key = text.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            if len(text) > 220:
+                text = text[:217].rstrip() + "..."
+            source_skill = str(getattr(item, "source_skill", "")).strip()
+            evidence_id = str(getattr(item, "evidence_id", "")).strip()
+            suffix_parts = [part for part in (source_skill, f"evidence {evidence_id}" if evidence_id else "") if part]
+            suffix = f" ({'; '.join(suffix_parts)})" if suffix_parts else ""
+            lines.append(f"- {text}{suffix}")
+            if len(lines) >= limit:
+                break
+        return lines or [f"- {empty_message}"]
+
+    @staticmethod
+    def _format_claim_lines(
+        claims: List[ClaimSummary],
+        empty_message: str,
+        limit: int = 5,
+    ) -> List[str]:
+        if not claims:
+            return [f"- {empty_message}"]
+        return [
+            (
+                f"- {claim.claim} "
+                f"(confidence {claim.confidence:.2f}; evidence {', '.join(claim.evidence_ids[:4])})"
+            )
+            for claim in claims[:limit]
+        ]
+
+    def _render_repurposing_answer(
+        self,
+        query: str,
+        evidence_items,
+        warnings: List[str],
+        limitations: List[str],
+        web_section: tuple[str, List[str]],
+    ) -> str:
+        sections, _ = self._partition_repurposing_items(evidence_items)
+        lines = [f"Query: {query}", "", "Approved indications:"]
+        lines.extend(
+            self._format_item_lines(
+                sections["approved_indications"],
+                "No approved-indication evidence was retrieved.",
+            )
+        )
+
+        lines.extend(["", "Repurposing evidence:"])
+        lines.extend(
+            self._format_item_lines(
+                sections["repurposing_evidence"],
+                "No strong repurposing evidence was retrieved.",
+            )
+        )
+
+        lines.extend(["", "Supporting signals:"])
+        lines.extend(
+            self._format_item_lines(
+                sections["supporting_signals"],
+                "No additional supporting signals were retrieved.",
+            )
+        )
+
+        coverage_gaps: List[str] = []
+        if not sections["repurposing_evidence"]:
+            coverage_gaps.append(
+                "RepoDB-style strong repurposing rows were not retrieved, so the answer cannot claim strong repurposing support."
+            )
+        if not sections["approved_indications"]:
+            coverage_gaps.append(
+                "Approved-indication coverage is incomplete for this repurposing-style question."
+            )
+        if coverage_gaps:
+            lines.extend(["", "Coverage gaps:"])
+            lines.extend(f"- {gap}" for gap in coverage_gaps)
+
+        web_heading, web_lines = web_section
+        if web_lines:
+            lines.extend(["", web_heading])
+            lines.extend(web_lines)
+
+        if warnings:
+            lines.extend(["", "Warnings:"])
+            lines.extend(f"- {warning}" for warning in warnings)
+
+        if limitations:
+            lines.extend(["", "Limitations:"])
+            lines.extend(f"- {limitation}" for limitation in limitations)
+
+        return "\n".join(lines)
+
+    def _render_mechanism_answer(
+        self,
+        query: str,
+        evidence_items,
+        assessments: List[ClaimAssessment],
+        warnings: List[str],
+        limitations: List[str],
+        web_section: tuple[str, List[str]],
+    ) -> str:
+        _, _, target_claims, mechanism_claims = self._mechanism_claim_groups(
+            query,
+            evidence_items,
+            assessments,
+        )
+
+        lines = [f"Query: {query}", "", "Targets supported:"]
+        lines.extend(
+            self._format_claim_lines(
+                target_claims,
+                "No target-support evidence was retrieved.",
+            )
+        )
+
+        lines.extend(["", "Mechanism coverage:"])
+        lines.extend(
+            self._format_claim_lines(
+                mechanism_claims,
+                "No direct mechanism-of-action evidence was retrieved.",
+            )
+        )
+
+        if not mechanism_claims:
+            lines.extend(
+                [
+                    "",
+                    "Coverage gaps:",
+                    "- Direct mechanism-of-action support was not retrieved, so this answer reflects target support rather than full MOA completeness.",
+                ]
+            )
+
+        web_heading, web_lines = web_section
+        if web_lines:
+            lines.extend(["", web_heading])
+            lines.extend(web_lines)
+
+        if warnings:
+            lines.extend(["", "Warnings:"])
+            lines.extend(f"- {warning}" for warning in warnings)
+
+        if limitations:
+            lines.extend(["", "Limitations:"])
+            lines.extend(f"- {limitation}" for limitation in limitations)
+
+        return "\n".join(lines)
+
     @staticmethod
     def _render_answer_text(
         query: str,
+        query_type: str,
         claims: List[ClaimSummary],
         warnings: List[str],
         limitations: List[str],
+        web_section: tuple[str, List[str]],
     ) -> str:
         if not claims:
             return (
@@ -960,12 +1464,30 @@ Formatting requirements:
                 "Insufficient evidence found to answer the query."
             )
 
-        lines = [f"Query: {query}", "", "Key Claims:"]
+        lines = [f"Query: {query}", "", f"{ResponderAgent._claim_section_heading(query_type)}:"]
         for claim in claims[:5]:
             lines.append(
                 f"- {claim.claim} "
                 f"(confidence {claim.confidence:.2f}; evidence {', '.join(claim.evidence_ids)})"
             )
+
+        if query_type == "ddi_mechanism" and (
+            len(claims) <= 1
+            or any("single source" in limitation.lower() for limitation in limitations)
+        ):
+            lines.extend(
+                [
+                    "",
+                    "Mechanism coverage:",
+                    "- Retrieved mechanistic interaction evidence is sparse and does not establish complete interaction-mechanism coverage.",
+                ]
+            )
+
+        web_heading, web_lines = web_section
+
+        if web_lines:
+            lines.extend(["", web_heading])
+            lines.extend(web_lines)
 
         if warnings:
             lines.extend(["", "Warnings:"])
@@ -983,6 +1505,7 @@ Formatting requirements:
         claims: List[ClaimSummary],
         warnings: List[str],
         limitations: List[str],
+        web_section: tuple[str, List[str]],
     ) -> str:
         if not claims:
             return (
@@ -1011,11 +1534,29 @@ Formatting requirements:
             lines.extend(["", "Warnings:"])
             lines.extend(f"- {warning}" for warning in warnings[:5])
 
+        web_heading, web_lines = web_section
+
+        if web_lines:
+            lines.extend(["", web_heading])
+            lines.extend(web_lines)
+
         if limitations:
             lines.extend(["", "Limitations:"])
             lines.extend(f"- {limitation}" for limitation in limitations[:8])
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _claim_section_heading(query_type: str) -> str:
+        return {
+            "ddi": "Clinically Important Interactions",
+            "ddi_mechanism": "Clinically Important Interactions",
+            "labeling": "Structured Labeling Findings",
+            "pharmacogenomics": "Structured PGx Findings",
+            "adr": "Structured Safety Findings",
+            "drug_repurposing": "Structured Repurposing Evidence",
+            "mechanism": "Mechanistic Findings",
+        }.get(str(query_type or "").strip().lower(), "Key Claims")
 
     @staticmethod
     def _extract_target_label(item: Any) -> str:

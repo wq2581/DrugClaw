@@ -125,7 +125,29 @@ class DrugCentralSkill(RAGSkill):
             if len(results) >= limit:
                 break
             approved_name = approved.get("name", "").strip()
-            if approved_name:
+            indication_name = (
+                str(approved.get("indication", "") or "").strip()
+                or str(approved.get("indication_name", "") or "").strip()
+                or str(approved.get("disease_name", "") or "").strip()
+                or str(approved.get("approved_indication", "") or "").strip()
+            )
+            if indication_name:
+                results.append(RetrievalResult(
+                    source_entity=canonical,
+                    source_type="drug",
+                    target_entity=indication_name,
+                    target_type="disease",
+                    relationship="indicated_for",
+                    weight=1.0,
+                    source="DrugCentral",
+                    skill_category="drug_knowledgebase",
+                    evidence_text=f"DrugCentral local indication entry: {canonical} indicated for {indication_name}",
+                    metadata={
+                        "drugcentral_id": approved.get("id", ""),
+                        "approved_name": approved_name,
+                    },
+                ))
+            elif approved_name:
                 results.append(RetrievalResult(
                     source_entity=canonical,
                     source_type="drug",

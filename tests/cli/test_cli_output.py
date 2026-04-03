@@ -58,6 +58,12 @@ def test_run_query_can_print_structured_evidence_summary(monkeypatch, capsys) ->
                 "success": True,
                 "final_answer_structured": {
                     "summary_confidence": 0.75,
+                    "task_type": "mechanism",
+                    "final_outcome": "partial_with_weak_support",
+                    "diagnostics": {
+                        "strong_record_count": 1,
+                        "weak_support_count": 0,
+                    },
                     "key_claims": [
                         {
                             "claim": "Imatinib targets ABL1.",
@@ -84,6 +90,8 @@ def test_run_query_can_print_structured_evidence_summary(monkeypatch, capsys) ->
 
     assert exit_code == 0
     assert "summary_confidence=0.75" in captured.out
+    assert "task_type=mechanism" in captured.out
+    assert "final_outcome=partial_with_weak_support" in captured.out
     assert "Imatinib targets ABL1." in captured.out
 
 

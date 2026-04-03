@@ -156,6 +156,7 @@ class DrugClawSystem:
         wf.add_node("respond",            self._respond_node)
         wf.add_node("reflect",           self._reflect_node)
         wf.add_node("web_search",         self._web_search_node)
+        wf.add_node("simple_web_search",  self._simple_web_search_node)
         wf.add_node("simple_respond",     self._simple_respond_node)
         wf.add_node("web_search_direct",  self._web_search_direct_node)
         wf.add_node("finalize",           self._finalize_node)
@@ -190,7 +191,10 @@ class DrugClawSystem:
         wf.add_conditional_edges(
             "assess_claims",
             self._after_assessment,
-            {"respond": "respond", "simple_respond": "simple_respond"},
+            {
+                "respond": "respond",
+                "simple_web_search": "simple_web_search",
+            },
         )
         wf.add_edge("respond", "reflect")
         wf.add_conditional_edges(
@@ -201,6 +205,7 @@ class DrugClawSystem:
 
         # simple / web_only termination
         wf.add_edge("web_search",        "finalize")
+        wf.add_edge("simple_web_search", "simple_respond")
         wf.add_edge("simple_respond",    "finalize")
         wf.add_edge("web_search_direct", "finalize")
         wf.add_edge("finalize",          END)
@@ -237,7 +242,7 @@ class DrugClawSystem:
             getattr(state, "thinking_mode", ThinkingMode.GRAPH)
         )
         if mode == ThinkingMode.SIMPLE.value:
-            return "simple_respond"
+            return "simple_web_search"
         return "respond"
 
     @staticmethod
@@ -335,6 +340,17 @@ class DrugClawSystem:
         self._record_stage(state, "WEB_SEARCH")
         return self.web_search.execute(state)
 
+    def _simple_web_search_node(self, state: AgentState) -> AgentState:
+        """Simple-mode web search lane: fetch authority-first web evidence before answer synthesis."""
+        self._record_stage(state, "WEB_SEARCH")
+        execute_simple = getattr(self.web_search, "execute_simple", None)
+        if callable(execute_simple):
+            return execute_simple(state)
+        execute = getattr(self.web_search, "execute", None)
+        if callable(execute):
+            return execute(state)
+        return state
+
     def _simple_respond_node(self, state: AgentState) -> AgentState:
         """Simple-mode: synthesize retrieved text directly."""
         self._record_stage(state, "ANSWER")
@@ -353,6 +369,7 @@ class DrugClawSystem:
             state.final_answer_structured = self.responder._build_final_answer(
                 state.original_query,
                 state.evidence_items,
+                web_search_results=getattr(state, "web_search_results", []),
             )
         return state
 

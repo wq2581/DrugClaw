@@ -197,8 +197,7 @@ def test_planner_normalizes_noncanonical_repurposing_question_type_to_fallback()
         "RepoDB",
         "DrugCentral",
         "DrugBank",
-        "Open Targets Platform",
-        "DRUGMECHDB",
+        "DailyMed",
         "openFDA Human Drug",
     ]
     assert plan.requires_graph_reasoning is False
@@ -231,10 +230,67 @@ def test_planner_normalizes_real_world_noncanonical_repurposing_query_type_to_fa
         "RepoDB",
         "DrugCentral",
         "DrugBank",
-        "Open Targets Platform",
-        "DRUGMECHDB",
+        "DailyMed",
         "openFDA Human Drug",
     ]
+    assert plan.requires_graph_reasoning is False
+
+
+def test_planner_enforces_phase_2a_repurposing_bundle_for_canonical_question_type() -> None:
+    plan = PlannerAgent(
+        _LLMStub(
+            {
+                "question_type": "drug_repurposing",
+                "entities": {"drug": ["metformin"]},
+                "subquestions": ["What are the approved indications and repurposing evidence of metformin?"],
+                "preferred_skills": [
+                    "Open Targets Platform",
+                    "DRUGMECHDB",
+                    "DailyMed",
+                    "RepoDB",
+                    "DrugCentral",
+                ],
+                "preferred_evidence_types": ["database_record"],
+                "requires_graph_reasoning": True,
+                "requires_prediction_sources": False,
+                "requires_web_fallback": False,
+                "answer_risk_level": "high",
+                "notes": ["Mixed indication and repurposing query."],
+            }
+        )
+    ).plan("What are the approved indications and repurposing evidence of metformin?")
+
+    assert plan.question_type == "drug_repurposing"
+    assert plan.preferred_skills == [
+        "RepoDB",
+        "DrugCentral",
+        "DrugBank",
+        "DailyMed",
+        "openFDA Human Drug",
+    ]
+    assert plan.requires_graph_reasoning is False
+
+
+def test_planner_enforces_phase_2a_pgx_bundle_for_canonical_question_type() -> None:
+    plan = PlannerAgent(
+        _LLMStub(
+            {
+                "question_type": "pharmacogenomics",
+                "entities": {"drug": ["clopidogrel"]},
+                "subquestions": ["What pharmacogenomic factors affect clopidogrel efficacy and safety?"],
+                "preferred_skills": ["FAERS", "PharmGKB", "CPIC"],
+                "preferred_evidence_types": ["database_record"],
+                "requires_graph_reasoning": True,
+                "requires_prediction_sources": False,
+                "requires_web_fallback": False,
+                "answer_risk_level": "high",
+                "notes": ["Prefer PGx resources."],
+            }
+        )
+    ).plan("What pharmacogenomic factors affect clopidogrel efficacy and safety?")
+
+    assert plan.question_type == "pharmacogenomics"
+    assert plan.preferred_skills == ["PharmGKB", "CPIC"]
     assert plan.requires_graph_reasoning is False
 
 

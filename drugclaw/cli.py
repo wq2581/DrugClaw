@@ -518,6 +518,26 @@ def _print_evidence_summary(result: dict) -> None:
 
     print("\n== Evidence Summary ==")
     print(f"summary_confidence={structured.get('summary_confidence', 0.0):.2f}")
+    if structured.get("task_type"):
+        print(f"task_type={structured.get('task_type')}")
+    if structured.get("final_outcome"):
+        print(f"final_outcome={structured.get('final_outcome')}")
+
+    diagnostics = structured.get("diagnostics") or {}
+    if diagnostics:
+        rendered_pairs = []
+        for key, value in diagnostics.items():
+            if isinstance(value, list):
+                shown = ", ".join(str(entry) for entry in value[:3])
+                if len(value) > 3:
+                    shown += ", ..."
+                rendered_pairs.append(f"{key}={shown}")
+                continue
+            if isinstance(value, dict):
+                continue
+            rendered_pairs.append(f"{key}={value}")
+        if rendered_pairs:
+            print("diagnostics=" + "; ".join(rendered_pairs[:6]))
 
     for claim in structured.get("key_claims", [])[:5]:
         evidence_ids = ", ".join(claim.get("evidence_ids", []))

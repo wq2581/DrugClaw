@@ -86,6 +86,43 @@ def format_metadata_header(
     return "\n".join(lines)
 
 
+def format_task_outcome_block(structured: Dict[str, Any]) -> str:
+    task_type = str(structured.get("task_type", "") or "").strip()
+    final_outcome = str(structured.get("final_outcome", "") or "").strip()
+    diagnostics = structured.get("diagnostics", {}) or {}
+
+    if not task_type and not final_outcome and not diagnostics:
+        return ""
+
+    lines: List[str] = []
+    summary_bits: List[str] = []
+    if task_type:
+        summary_bits.append(f"**Task Type** : `{task_type}`")
+    if final_outcome:
+        summary_bits.append(f"**Final Outcome** : `{final_outcome}`")
+    if summary_bits:
+        lines.append("> " + "  |  ".join(summary_bits))
+
+    diagnostic_bits: List[str] = []
+    for key, value in diagnostics.items():
+        if isinstance(value, dict):
+            continue
+        if isinstance(value, list):
+            if not value:
+                continue
+            shown = ", ".join(str(entry) for entry in value[:3])
+            if len(value) > 3:
+                shown += ", ..."
+            diagnostic_bits.append(f"`{key}={shown}`")
+            continue
+        diagnostic_bits.append(f"`{key}={value}`")
+    if diagnostic_bits:
+        lines.append("> **Diagnostics** : " + "  ".join(diagnostic_bits[:6]))
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def format_evidence_table(
     evidence_items: List[Dict[str, Any]],
     max_rows: int = 20,
@@ -418,6 +455,7 @@ def wrap_answer_card(
             query, mode, iterations, graph_size, confidence,
             resource_filter, timestamp,
         ),
+        format_task_outcome_block(structured),
         "---",
         "",
         "## Answer",
