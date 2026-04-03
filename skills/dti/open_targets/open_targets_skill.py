@@ -361,6 +361,7 @@ class OpenTargetsSkill(RAGSkill):
                     "target_id": metadata.get("target_id", ""),
                     "disease_id": metadata.get("disease_id", ""),
                     "gene_symbol": metadata.get("gene_symbol", ""),
+                    "mechanism_of_action": metadata.get("mechanism_of_action", ""),
                     "max_clinical_stage": metadata.get("max_clinical_stage", ""),
                     "relationship": relationship,
                 },
@@ -379,6 +380,7 @@ class OpenTargetsSkill(RAGSkill):
                     "target_entity": target_entity,
                     "source_type": "drug",
                     "target_type": record.get("target_type", "protein"),
+                    "mechanism_of_action": metadata.get("mechanism_of_action", ""),
                     "max_clinical_stage": metadata.get("max_clinical_stage", ""),
                 },
             )

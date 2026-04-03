@@ -49,6 +49,9 @@ class FinalAnswer:
     citations: List[str]
     limitations: List[str]
     warnings: List[str]
+    task_type: str = ""
+    final_outcome: str = ""
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -59,6 +62,9 @@ class FinalAnswer:
             "citations": self.citations,
             "limitations": self.limitations,
             "warnings": self.warnings,
+            "task_type": self.task_type,
+            "final_outcome": self.final_outcome,
+            "diagnostics": self.diagnostics,
         }
 
 

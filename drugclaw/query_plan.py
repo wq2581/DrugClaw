@@ -323,8 +323,7 @@ def preferred_skills_for_question_type(question_type: str) -> List[str]:
             "RepoDB",
             "DrugCentral",
             "DrugBank",
-            "Open Targets Platform",
-            "DRUGMECHDB",
+            "DailyMed",
             "openFDA Human Drug",
         ],
         "adr": [

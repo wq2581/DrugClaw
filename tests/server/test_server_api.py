@@ -1,10 +1,35 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
+import httpx
 import pytest
 
 from drugclaw import cli
+from drugclaw.server_app import create_app
+
+
+_REQUEST_TIMEOUT_SECONDS = 1.0
+
+
+def _make_client(runtime: object) -> httpx.AsyncClient:
+    app = create_app(runtime=runtime)
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+
+async def _request(
+    client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    **kwargs,
+) -> httpx.Response:
+    request_fn = getattr(client, method)
+    return await asyncio.wait_for(
+        request_fn(path, **kwargs),
+        timeout=_REQUEST_TIMEOUT_SECONDS,
+    )
 
 
 def test_cli_parser_supports_serve_command() -> None:
@@ -38,37 +63,28 @@ def test_query_request_defaults_mode_to_none() -> None:
     assert request.mode is None
 
 
-def test_health_endpoint() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/health")
+@pytest.mark.anyio
+async def test_health_endpoint() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/health")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
 
-def test_resources_endpoint() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/resources")
+@pytest.mark.anyio
+async def test_resources_endpoint() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/resources")
 
     assert response.status_code == 200
     assert response.json()["total_resources"] == 1
 
 
-def test_resources_endpoint_includes_details() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/resources")
+@pytest.mark.anyio
+async def test_resources_endpoint_includes_details() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/resources")
 
     assert response.status_code == 200
     data = response.json()
@@ -76,21 +92,20 @@ def test_resources_endpoint_includes_details() -> None:
     assert data["resources"][0]["name"] == "ChEMBL"
 
 
-def test_query_endpoint() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.post(
-        "/api/query",
-        json={
-            "query": "What are the known drug targets of imatinib?",
-            "mode": "simple",
-            "resource_filter": ["ChEMBL"],
-            "save_md_report": True,
-        },
-    )
+@pytest.mark.anyio
+async def test_query_endpoint() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(
+            client,
+            "post",
+            "/api/query",
+            json={
+                "query": "What are the known drug targets of imatinib?",
+                "mode": "simple",
+                "resource_filter": ["ChEMBL"],
+                "save_md_report": True,
+            },
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -101,57 +116,47 @@ def test_query_endpoint() -> None:
     assert body["save_md_report"] is True
 
 
-def test_query_endpoint_uses_runtime_default_mode_when_omitted() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
+@pytest.mark.anyio
+async def test_query_endpoint_uses_runtime_default_mode_when_omitted() -> None:
     runtime = _RuntimeStub(default_mode="web_only")
-    client = TestClient(create_app(runtime=runtime))
-    response = client.post(
-        "/api/query",
-        json={
-            "query": "What are the known drug targets of imatinib?",
-            "resource_filter": ["ChEMBL"],
-        },
-    )
+    async with _make_client(runtime) as client:
+        response = await _request(
+            client,
+            "post",
+            "/api/query",
+            json={
+                "query": "What are the known drug targets of imatinib?",
+                "resource_filter": ["ChEMBL"],
+            },
+        )
 
     assert response.status_code == 200
     assert runtime.calls[0]["mode"] == "web_only"
     assert response.json()["mode"] == "web_only"
 
 
-def test_query_detail_endpoint() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/api/queries/query_1")
+@pytest.mark.anyio
+async def test_query_detail_endpoint() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/api/queries/query_1")
 
     assert response.status_code == 200
     assert response.json()["query_id"] == "query_1"
 
 
-def test_query_report_endpoint() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/api/queries/query_1/report")
+@pytest.mark.anyio
+async def test_query_report_endpoint() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/api/queries/query_1/report")
 
     assert response.status_code == 200
     assert "# DrugClaw Query Report" in response.text
 
 
-def test_root_serves_chat_page() -> None:
-    from fastapi.testclient import TestClient
-
-    from drugclaw.server_app import create_app
-
-    client = TestClient(create_app(runtime=_RuntimeStub()))
-    response = client.get("/")
+@pytest.mark.anyio
+async def test_root_serves_chat_page() -> None:
+    async with _make_client(_RuntimeStub()) as client:
+        response = await _request(client, "get", "/")
 
     assert response.status_code == 200
     assert "DrugClaw" in response.text

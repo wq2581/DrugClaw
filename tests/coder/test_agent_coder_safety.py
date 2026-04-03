@@ -35,7 +35,7 @@ class _LLMStub:
 
 class _LLMShouldNotRun:
     def generate(self, messages, temperature=0.3):
-        raise AssertionError("LLM should not be called in direct_retrieve mode")
+        raise AssertionError("LLM should not be called in deterministic mode")
 
 
 @dataclass
@@ -150,7 +150,7 @@ def test_generate_and_execute_falls_back_when_execution_raises() -> None:
     assert "Imatinib targets ABL1." in result["per_skill"][skill.name]["output"]
 
 
-def test_generate_and_execute_can_use_direct_retrieve_strategy() -> None:
+def test_generate_and_execute_can_use_deterministic_only_strategy() -> None:
     skill = _SkillStub()
     agent = CoderAgent(_LLMShouldNotRun(), _RegistryStub(skill))
 
@@ -159,10 +159,10 @@ def test_generate_and_execute_can_use_direct_retrieve_strategy() -> None:
         entities={"drug": ["imatinib"]},
         query="What does imatinib target?",
         max_results_per_skill=5,
-        execution_strategy="direct_retrieve",
+        execution_strategy="deterministic_only",
     )
 
-    assert result["per_skill"][skill.name]["strategy"] == "direct_retrieve"
+    assert result["per_skill"][skill.name]["strategy"] == "deterministic_only"
     assert "Imatinib targets ABL1." in result["per_skill"][skill.name]["output"]
 
 

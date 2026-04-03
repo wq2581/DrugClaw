@@ -178,6 +178,276 @@ def test_responder_reports_insufficient_evidence_instead_of_hallucinating() -> N
     assert "TTD" in updated.current_answer
 
 
+def test_responder_reports_deterministic_failure_modes_more_specifically() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(original_query="What are the known drug targets of imatinib?")
+    state.retrieval_diagnostics = [
+        {
+            "skill": "TTD",
+            "strategy": "deterministic_only",
+            "final_status": "deterministic_failed",
+            "structured_status": "error",
+            "structured_error": "retrieve() error: file not found",
+            "script_status": "not_available",
+            "records": 0,
+        },
+        {
+            "skill": "LegacyTargetCLI",
+            "strategy": "deterministic_only",
+            "final_status": "success_text_only",
+            "structured_status": "empty",
+            "script_status": "success",
+            "records": 0,
+        },
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert "structured retrieval failed" in updated.current_answer
+    assert "text-only fallback output was available" in updated.current_answer
+
+
+def test_responder_shapes_pgx_web_evidence_into_guideline_support_section() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(original_query="What pharmacogenomic factors affect clopidogrel efficacy and safety?")
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="E1",
+            source_skill="PharmGKB",
+            claim="clopidogrel has a pharmacogenomic association with CYP2C19",
+            snippet="Clopidogrel exposure and efficacy vary with CYP2C19 metabolizer status.",
+            relationship="has_pgx_association",
+            source_entity="clopidogrel",
+            target_entity="CYP2C19",
+            metadata={"target_type": "gene"},
+        )
+    ]
+    state.web_search_results = [
+        {
+            "source": "PubMed",
+            "title": "CPIC-guided clopidogrel therapy",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+            "snippet": "Clinical guidance supports altered antiplatelet strategy in CYP2C19 poor metabolizers.",
+        }
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert "Structured PGx Findings:" in updated.current_answer
+    assert "Authority-First PGx Guidance:" in updated.current_answer
+    assert "Guideline support" in updated.current_answer
+    assert "CPIC-guided clopidogrel therapy" in updated.current_answer
+    assert "Authority-first web evidence:" not in updated.current_answer
+    assert "[web:PubMed] https://pubmed.ncbi.nlm.nih.gov/12345678/" in updated.final_answer_structured.citations
+
+
+def test_responder_shapes_ddi_web_evidence_without_overriding_structured_interaction_claims() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What are the clinically important drug-drug interactions of warfarin and their mechanisms?"
+    )
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="D1",
+            source_skill="DDInter",
+            claim="warfarin drug_drug_interaction amiodarone",
+            snippet="Warfarin interacts with amiodarone and requires INR monitoring.",
+            relationship="drug_drug_interaction",
+            source_entity="warfarin",
+            target_entity="amiodarone",
+            retrieval_score=0.91,
+            structured_payload={"ddi_description": "requires INR monitoring"},
+            metadata={"target_type": "drug"},
+        )
+    ]
+    state.web_search_results = [
+        {
+            "source": "DailyMed",
+            "title": "Warfarin label interaction precautions",
+            "url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=example",
+            "snippet": "Monitor INR closely when combined with CYP2C9 inhibitors because exposure may increase.",
+        }
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.key_claims[0].claim == "warfarin interacts with amiodarone (requires INR monitoring)"
+    assert "Clinically Important Interactions:" in updated.current_answer
+    assert "warfarin interacts with amiodarone (requires INR monitoring)" in updated.current_answer
+    assert "Authority-First Clinical Interaction Support:" in updated.current_answer
+    assert "Mechanistic support" in updated.current_answer
+    assert "Authority-first web evidence:" not in updated.current_answer
+
+
+def test_responder_shapes_labeling_web_evidence_into_regulatory_support_section() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What key prescribing and clinical use information should be considered for metformin?"
+    )
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="L1",
+            source_skill="openFDA Human Drug",
+            claim="Metformin Hydrochloride indicated_for indications and usage",
+            snippet="Used as an adjunct to diet and exercise to improve glycemic control in adults and pediatric patients with type 2 diabetes mellitus.",
+            relationship="indicated_for",
+            source_entity="Metformin Hydrochloride",
+            target_entity="indications and usage",
+            evidence_kind="label_text",
+            retrieval_score=0.86,
+            structured_payload={"field": "indications_and_usage"},
+            metadata={"target_type": "label_section"},
+        ),
+        _make_evidence_item(
+            evidence_id="L2",
+            source_skill="openFDA Human Drug",
+            claim="Metformin Hydrochloride has_warning warnings",
+            snippet="Postmarketing cases of metformin-associated lactic acidosis have been reported; assess renal function and risk factors before use.",
+            relationship="has_warning",
+            source_entity="Metformin Hydrochloride",
+            target_entity="warnings",
+            evidence_kind="label_text",
+            retrieval_score=0.86,
+            structured_payload={"field": "warnings"},
+            metadata={"target_type": "label_section"},
+        ),
+    ]
+    state.web_search_results = [
+        {
+            "source": "DailyMed",
+            "title": "Metformin prescribing information",
+            "url": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=metformin",
+            "snippet": "Official labeling reinforces renal function assessment and lactic acidosis precautions before and during therapy.",
+        }
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert "Structured Labeling Findings:" in updated.current_answer
+    assert "type 2 diabetes mellitus" in updated.current_answer
+    assert "Authority-First Labeling Support:" in updated.current_answer
+    assert "Regulatory warning support" in updated.current_answer
+    assert "Authority-first web evidence:" not in updated.current_answer
+
+
+def test_responder_reports_partial_with_weak_support_for_label_only_repurposing_answers() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What are the approved indications and repurposing evidence of metformin?"
+    )
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="R1",
+            source_skill="openFDA Human Drug",
+            claim="Metformin indicated_for indications and usage",
+            snippet="Used as an adjunct to diet and exercise to improve glycemic control in adults and pediatric patients with type 2 diabetes mellitus.",
+            relationship="indicated_for",
+            source_entity="Metformin",
+            target_entity="indications and usage",
+            evidence_kind="label_text",
+            retrieval_score=0.84,
+            structured_payload={"field": "indications_and_usage"},
+            metadata={"target_type": "label_section"},
+        ),
+        _make_evidence_item(
+            evidence_id="R2",
+            source_skill="DailyMed",
+            claim="metformin has_official_label Metformin hydrochloride tablet, film coated",
+            snippet="DailyMed labeling for metformin includes indications for improving glycemic control in type 2 diabetes mellitus.",
+            relationship="has_official_label",
+            source_entity="metformin",
+            target_entity="Metformin hydrochloride tablet, film coated",
+            evidence_kind="label_text",
+            retrieval_score=0.82,
+            metadata={"target_type": "drug_label"},
+        ),
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.task_type == "drug_repurposing"
+    assert updated.final_answer_structured.final_outcome == "partial_with_weak_support"
+    assert "Approved indications:" in updated.current_answer
+    assert "Repurposing evidence:" in updated.current_answer
+    assert "Supporting signals:" in updated.current_answer
+    assert "Structured Repurposing Evidence:" not in updated.current_answer
+
+
+def test_responder_marks_target_without_mechanism_as_partial_for_mechanism_queries() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What are the known drug targets and mechanism of action of imatinib?"
+    )
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="M1",
+            source_skill="BindingDB",
+            claim="imatinib targets ABL1",
+            snippet="imatinib Ki=21 nM against ABL1",
+            relationship="targets",
+            source_entity="imatinib",
+            target_entity="ABL1",
+            retrieval_score=0.92,
+        )
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.task_type == "mechanism"
+    assert updated.final_answer_structured.final_outcome == "partial_with_weak_support"
+    assert "Targets supported:" in updated.current_answer
+    assert "Mechanism coverage:" in updated.current_answer
+
+
+def test_responder_marks_strong_pgx_guidance_as_strong_answer() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(original_query="What pharmacogenomic factors affect clopidogrel efficacy and safety?")
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="P-STRONG",
+            source_skill="CPIC",
+            claim="clopidogrel has_pgx_guideline CYP2C19",
+            snippet="CPIC: clopidogrel has a pharmacogenomic association with CYP2C19 (CPIC=A, ClinPGx=1A)",
+            relationship="has_pgx_guideline",
+            source_entity="clopidogrel",
+            target_entity="CYP2C19",
+            retrieval_score=0.90,
+            structured_payload={
+                "cpiclevel": "A",
+                "clinpgxlevel": "1A",
+                "pgxtesting": "Actionable PGx",
+                "usedforrecommendation": True,
+            },
+            metadata={"target_type": "gene"},
+        )
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.task_type == "pharmacogenomics"
+    assert updated.final_answer_structured.final_outcome == "strong_answer"
+
+
+def test_responder_marks_insufficient_safety_answers_as_honest_gap() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What are the major safety risks and serious adverse reactions of clozapine?"
+    )
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert updated.final_answer_structured.task_type == "adr"
+    assert updated.final_answer_structured.final_outcome == "honest_gap"
+
+
 def test_responder_summarizes_repetitive_single_source_limitations() -> None:
     responder = ResponderAgent(_LLMStub())
     state = AgentState(original_query="What prescribing and safety information is available for metformin?")
@@ -737,6 +1007,36 @@ def test_responder_prioritizes_informative_ddi_mechanism_claims_over_unresolved_
     assert all("unresolved kegg" not in claim for claim in claims)
     assert " interacts with dr " not in updated.current_answer.lower()
     assert " interacts with cpd " not in updated.current_answer.lower()
+
+
+def test_responder_adds_ddi_mechanism_coverage_note_when_mechanistic_support_is_sparse() -> None:
+    responder = ResponderAgent(_LLMStub())
+    state = AgentState(
+        original_query="What are the clinically important drug-drug interactions of warfarin and their mechanisms?"
+    )
+    state.evidence_items = [
+        _make_evidence_item(
+            evidence_id="K1",
+            source_skill="KEGG Drug",
+            claim="warfarin drug_drug_interaction dr:D00015",
+            snippet="KEGG Drug DDI: dr:D00564 interacts with dr:D00015 (CI; Enzyme: CYP2C9)",
+            relationship="drug_drug_interaction",
+            source_entity="warfarin",
+            target_entity="dr:D00015",
+            retrieval_score=0.86,
+            structured_payload={
+                "ddi_description": "Enzyme: CYP2C9",
+                "target_id": "dr:D00015",
+            },
+            metadata={"target_type": "drug_or_compound"},
+        )
+    ]
+
+    updated = responder.execute_simple(state)
+
+    assert updated.final_answer_structured is not None
+    assert "Mechanism coverage:" in updated.current_answer
+    assert "does not establish complete interaction-mechanism coverage" in updated.current_answer
 
 
 def test_responder_updates_state_claim_assessments_after_query_specific_filtering() -> None:

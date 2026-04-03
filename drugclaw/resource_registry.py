@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .skills.registry import SkillRegistry
 from .skills.skill_tree import SkillTree
+from .resource_path_resolver import collect_required_metadata_paths, is_path_key
 
 
 RESOURCE_STATUSES = (
@@ -222,24 +223,10 @@ def _determine_status(
 
 
 def _infer_required_metadata_paths(skill: Any) -> List[str]:
-    paths: List[str] = []
-    config = getattr(skill, "config", {}) or {}
-    for key, value in config.items():
-        if not isinstance(key, str):
-            continue
-        key_lower = key.lower()
-        if isinstance(value, str) and value.strip() and _looks_like_path_key(key_lower):
-            paths.append(value)
-        elif isinstance(value, dict):
-            for nested_key, nested_value in value.items():
-                if (
-                    isinstance(nested_key, str)
-                    and isinstance(nested_value, str)
-                    and nested_value.strip()
-                    and _looks_like_path_key(nested_key.lower())
-                ):
-                    paths.append(nested_value)
-    return sorted(dict.fromkeys(paths))
+    return collect_required_metadata_paths(
+        getattr(skill, "name", ""),
+        getattr(skill, "config", {}) or {},
+    )
 
 
 def _infer_required_dependencies(skill: Any) -> List[str]:
@@ -248,7 +235,7 @@ def _infer_required_dependencies(skill: Any) -> List[str]:
 
 
 def _looks_like_path_key(key: str) -> bool:
-    return key.endswith(("_path", "_csv", "_tsv", "_json", "_xml", "_graphml", "_dir", "_folder"))
+    return is_path_key(key)
 
 
 def _resource_id(name: str) -> str:

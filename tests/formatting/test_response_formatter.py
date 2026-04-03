@@ -30,6 +30,33 @@ def test_wrap_answer_card_prefers_structured_summary_confidence() -> None:
     assert "N/A" not in formatted
 
 
+def test_wrap_answer_card_surfaces_phase_2a_task_outcome_when_present() -> None:
+    result = {
+        "query": "What are the approved indications and repurposing evidence of metformin?",
+        "mode": "simple",
+        "iterations": 0,
+        "evidence_graph_size": 0,
+        "final_reward": 0.0,
+        "resource_filter": ["RepoDB", "DrugCentral", "DrugBank"],
+        "retrieved_content": [],
+        "final_answer_structured": {
+            "summary_confidence": 0.41,
+            "task_type": "drug_repurposing",
+            "final_outcome": "partial_with_weak_support",
+            "key_claims": [],
+            "evidence_items": [],
+            "citations": [],
+            "limitations": [],
+            "warnings": [],
+        },
+    }
+
+    formatted = wrap_answer_card("Metformin answer", result)
+
+    assert "drug_repurposing" in formatted
+    assert "partial_with_weak_support" in formatted
+
+
 def test_wrap_answer_card_truncates_long_source_list() -> None:
     result = {
         "query": "What prescribing and safety information is available for metformin?",

@@ -111,3 +111,45 @@ def test_open_targets_returns_sorted_indications_for_repurposing_query(
         "investigated_for",
     ]
     assert results[0].metadata["max_clinical_stage"] == "APPROVAL"
+
+
+def test_open_targets_build_evidence_items_preserves_phase_2a_classification_metadata() -> None:
+    skill = OpenTargetsSkill()
+
+    evidence_items = skill.build_evidence_items(
+        [
+            {
+                "source_entity": "IMATINIB",
+                "source_type": "drug",
+                "target_entity": "ABL1",
+                "target_type": "protein",
+                "relationship": "inhibitor",
+                "source": "Open Targets Platform",
+                "evidence_text": "IMATINIB inhibitor ABL1 via Bcr/Abl fusion protein inhibitor (Open Targets MoA)",
+                "metadata": {
+                    "chembl_id": "CHEMBL941",
+                    "target_id": "ENSG00000097007",
+                    "gene_symbol": "ABL1",
+                    "mechanism_of_action": "Bcr/Abl fusion protein inhibitor",
+                },
+            },
+            {
+                "source_entity": "METFORMIN",
+                "source_type": "drug",
+                "target_entity": "type 2 diabetes mellitus",
+                "target_type": "disease",
+                "relationship": "indicated_for",
+                "source": "Open Targets Platform",
+                "evidence_text": "METFORMIN indicated_for type 2 diabetes mellitus (Open Targets max stage APPROVAL)",
+                "metadata": {
+                    "chembl_id": "CHEMBL1431",
+                    "disease_id": "MONDO_0005148",
+                    "max_clinical_stage": "APPROVAL",
+                },
+            },
+        ],
+        query="What are the approved indications and repurposing evidence of metformin?",
+    )
+
+    assert evidence_items[0].structured_payload["mechanism_of_action"] == "Bcr/Abl fusion protein inhibitor"
+    assert evidence_items[1].structured_payload["max_clinical_stage"] == "APPROVAL"

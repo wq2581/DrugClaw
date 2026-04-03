@@ -22,6 +22,7 @@ from .query_plan import (
     infer_question_type_from_query,
     is_direct_target_lookup,
     normalize_question_type,
+    preferred_skills_for_question_type,
     prioritize_target_lookup_skills,
 )
 from .skills.registry import SkillRegistry
@@ -401,7 +402,7 @@ Provide your plan in JSON format:
             and (direct_question_type or direct_query_shape)
             and not getattr(plan, "requires_graph_reasoning", False)
         ):
-            return "direct_retrieve"
+            return "deterministic_only"
         return "auto"
 
     def _query_plan_to_retrieval_plan(
@@ -411,13 +412,33 @@ Provide your plan in JSON format:
         *,
         resource_filter: List[str],
     ) -> Dict[str, Any]:
+        normalized_question_type = normalize_question_type(plan.question_type)
+        strong_path_question_types = {
+            "drug_repurposing",
+            "mechanism",
+            "pharmacogenomics",
+        }
+        plan_skill_hints = (
+            preferred_skills_for_question_type(normalized_question_type)
+            if normalized_question_type in strong_path_question_types
+            else list(plan.preferred_skills)
+        )
+
         if resource_filter:
             selected_skills = self._filter_available_skills(list(resource_filter))
+        elif normalized_question_type == "drug_repurposing":
+            primary_repurposing_bundle = ["RepoDB", "DrugCentral", "DrugBank"]
+            secondary_official_bundle = ["DailyMed", "openFDA Human Drug"]
+            selected_skills = self._filter_available_skills(primary_repurposing_bundle)[:3]
+            if not selected_skills:
+                selected_skills = self._filter_available_skills(secondary_official_bundle)[:2]
+        elif normalized_question_type in {"mechanism", "pharmacogenomics"}:
+            selected_skills = self._filter_available_skills(plan_skill_hints)[:3]
         else:
-            explicit_plan_skills = self._filter_available_skills(list(plan.preferred_skills))
+            explicit_plan_skills = self._filter_available_skills(plan_skill_hints)
             use_plan_skills_exclusively = bool(
                 explicit_plan_skills
-                and plan.preferred_skills
+                and plan_skill_hints
                 and not is_direct_target_lookup(
                     query=query,
                     question_type=plan.question_type,
@@ -426,7 +447,7 @@ Provide your plan in JSON format:
             if use_plan_skills_exclusively:
                 selected_skills = explicit_plan_skills[:3]
             else:
-                combined_skill_hints = list(plan.preferred_skills) + list(
+                combined_skill_hints = plan_skill_hints + list(
                     self.skill_registry.get_skills_for_query(query)
                 )
                 combined_skill_hints = self._apply_query_skill_policy(
@@ -720,6 +741,7 @@ Respond in JSON:
         diagnostics: List[Dict[str, Any]] = []
         for skill_name in skill_names:
             info = coder_result.get("per_skill", {}).get(skill_name, {})
+            nested = dict(info.get("diagnostics", {}) or {})
             diagnostics.append(
                 {
                     "skill": skill_name,
@@ -727,6 +749,7 @@ Respond in JSON:
                     "error": info.get("error", ""),
                     "records": len(info.get("records", []) or []),
                     "output": info.get("output", ""),
+                    **nested,
                 }
             )
         return diagnostics

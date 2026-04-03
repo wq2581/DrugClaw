@@ -47,6 +47,12 @@ def _sample_result() -> dict:
         "success": True,
         "final_answer_structured": {
             "summary_confidence": 0.83,
+            "task_type": "mechanism",
+            "final_outcome": "partial_with_weak_support",
+            "diagnostics": {
+                "strong_record_count": 1,
+                "weak_support_count": 0,
+            },
             "key_claims": [
                 {
                     "claim": "Imatinib targets ABL1.",
@@ -91,6 +97,7 @@ def test_query_logger_writes_md_report_when_requested(tmp_path: Path) -> None:
     assert "What does imatinib target?" in markdown
     assert "imatinib -> ABL1" in markdown
     assert "BindingDB" in markdown
+    assert "partial_with_weak_support" in markdown
 
 
 def test_query_logger_skips_md_report_when_not_requested(tmp_path: Path) -> None:
