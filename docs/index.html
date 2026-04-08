@@ -137,6 +137,18 @@
     display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;
     animation:fadeUp .8s .3s ease both;
   }
+  .hero-links{
+    margin-top:1rem;
+    display:flex;
+    justify-content:center;
+    gap:1.1rem;
+    flex-wrap:wrap;
+    font-size:.88rem;
+    color:var(--text-muted);
+    animation:fadeUp .8s .35s ease both;
+  }
+  .hero-links a{color:var(--text-muted)}
+  .hero-links a:hover{color:#fff}
   .btn-primary{
     background:var(--grad1);color:#000;
     padding:.75rem 2rem;border-radius:12px;
@@ -375,6 +387,20 @@
   }
   .code-block .cmd{color:var(--green)}
   .code-block .comment{color:#475569}
+  .note-card{
+    margin-top:1.5rem;
+    background:rgba(34,211,238,0.05);
+    border:1px solid rgba(34,211,238,0.12);
+    border-radius:14px;
+    padding:1.2rem 1.4rem;
+    color:var(--text-muted);
+  }
+  .note-card strong{color:#fff}
+  .inline-code{
+    font-family:'JetBrains Mono',monospace;
+    font-size:.82rem;
+    color:var(--accent);
+  }
 
   /* ── CTA ── */
   .cta-section{
@@ -463,7 +489,7 @@
       Open Source · MIT License
     </div>
     <h1>Agentic RAG for Drug Intelligence</h1>
-    <p>A drug-centered multi-agent RAG system for knowledge retrieval, reasoning, and evidence synthesis across 70 curated biomedical resources.</p>
+    <p>A CLI and agent runtime for drug-focused questions, built for evidence-grounded retrieval, reasoning, and source attribution across curated biomedical resources.</p>
     <div class="hero-actions">
       <a href="#quickstart" class="btn-primary">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -473,6 +499,11 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.73.083-.73 1.205.085 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23A11.51 11.51 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.652.242 2.873.118 3.176.77.84 1.235 1.91 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .322.218.694.825.576C20.565 21.796 24 17.3 24 12 24 5.37 18.627 0 12 0z"/></svg>
         View on GitHub
       </a>
+    </div>
+    <div class="hero-links">
+      <a href="https://github.com/QSong-github/DrugClaw/blob/main/support/DrugClaw_Paper.pdf" target="_blank">Technical Report</a>
+      <a href="https://github.com/QSong-github/DrugClaw/blob/main/README_CN.md" target="_blank">Chinese Version</a>
+      <a href="https://huggingface.co/datasets/Mike2481/DrugClaw_resources_data" target="_blank">Full Resources</a>
     </div>
   </div>
 </section>
@@ -635,56 +666,67 @@
   <div class="container fade-in">
     <div class="section-label">Get Started</div>
     <h2 class="section-title">Quick Start</h2>
-    <p class="section-desc">Up and running in minutes with just a working LLM config.</p>
+    <p class="section-desc">Follow the default minimal-mode setup path: clone the repo, configure your model, verify the environment, and run a real query.</p>
     <div class="steps">
       <div class="step">
         <div class="step-num">01</div>
         <div>
-          <h3>Create a `.venv` and Install Dependencies</h3>
+          <h3>Clone the Repository</h3>
           <div class="code-block">
-            <span class="cmd">python3 -m venv .venv</span><br>
-            <span class="cmd">. .venv/bin/activate</span><br>
-            <span class="cmd">python -m pip install --upgrade pip</span><br>
-            <span class="cmd">python -m pip install --no-build-isolation -r requirements.txt</span>
+            <span class="cmd">git clone https://github.com/QSong-github/DrugClaw</span><br>
+            <span class="cmd">cd DrugClaw</span>
           </div>
         </div>
       </div>
       <div class="step">
         <div class="step-num">02</div>
         <div>
-          <h3>Configure API Keys</h3>
+          <h3>Install Dependencies</h3>
           <div class="code-block">
-            <span class="cmd">cp</span> navigator_api_keys.example.json navigator_api_keys.json<br>
-            <span class="comment"># Edit navigator_api_keys.json with your credentials</span>
+            <span class="cmd">pip install -e .</span>
           </div>
         </div>
       </div>
       <div class="step">
         <div class="step-num">03</div>
         <div>
-          <h3>Run the Demo</h3>
+          <h3>Create <code>navigator_api_keys.json</code></h3>
           <div class="code-block">
-            <span class="cmd">python -m drugclaw</span> demo<br>
-            <span class="cmd">python -m drugclaw</span> run --query "What are the known drug targets of imatinib?"
+            <span class="comment"># Create navigator_api_keys.json at the repository root</span><br>
+            {<br>
+            &nbsp;&nbsp;"api_key": "&lt;your-api-key&gt;",<br>
+            &nbsp;&nbsp;"base_url": "&lt;your-base-url&gt;",<br>
+            &nbsp;&nbsp;"model": "gpt-5.4-mini"<br>
+            }
           </div>
         </div>
       </div>
       <div class="step">
         <div class="step-num">04</div>
         <div>
-          <h3>Use the Installed CLI</h3>
+          <h3>Verify the Environment</h3>
           <div class="code-block">
-            <span class="cmd">drugclaw</span> doctor<br>
-            <span class="cmd">drugclaw</span> list<br>
-            <span class="cmd">drugclaw</span> demo
+            <span class="cmd">python -m drugclaw</span> doctor
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">05</div>
+        <div>
+          <h3>Run Your First Query</h3>
+          <div class="code-block">
+            <span class="cmd">python -m drugclaw</span> run --query "What are the known drug targets of imatinib?"
           </div>
         </div>
       </div>
     </div>
+    <div class="note-card">
+      <strong>Minimal mode is the default.</strong> If you need deeper and broader local evidence coverage, download <span class="inline-code">resources_metadata_full.tar.gz</span> from the <a href="https://huggingface.co/datasets/Mike2481/DrugClaw_resources_data" target="_blank">Hugging Face mirror</a>, extract it at the repository root, then run <span class="inline-code">python -m drugclaw doctor</span> again.
+    </div>
 
     <!-- Python Usage -->
     <div style="margin-top:2rem">
-      <h3 style="font-size:1rem;margin-bottom:.8rem">Python API</h3>
+      <h3 style="font-size:1rem;margin-bottom:.8rem">Python API (Optional)</h3>
       <div class="code-block">
 <span class="comment"># Call DrugClaw from Python</span>
 <span class="cmd">from</span> drugclaw.config <span class="cmd">import</span> Config
@@ -709,15 +751,15 @@ print(result[<span style="color:var(--yellow)">"answer"</span>])
 <section class="cta-section">
   <div class="container fade-in" style="text-align:center">
     <div class="section-label" style="justify-content:center">Ready to Start?</div>
-    <h2 class="section-title" style="margin-bottom:1rem">Accelerate your drug discovery research</h2>
-    <p class="section-desc" style="margin:0 auto 2rem">Raise resource density, retrieval fidelity, and evidence-grounded reasoning — all at the same time.</p>
+    <h2 class="section-title" style="margin-bottom:1rem">Need broader local evidence coverage?</h2>
+    <p class="section-desc" style="margin:0 auto 2rem">Start with the default repository layout. When you need deeper local coverage, extract the full resource overlay and re-run the environment check.</p>
     <div class="hero-actions" style="justify-content:center">
-      <a href="https://github.com/QSong-github/DrugClaw" class="btn-primary" target="_blank">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.73.083-.73 1.205.085 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23A11.51 11.51 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.652.242 2.873.118 3.176.77.84 1.235 1.91 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .322.218.694.825.576C20.565 21.796 24 17.3 24 12 24 5.37 18.627 0 12 0z"/></svg>
-        Star on GitHub
+      <a href="https://huggingface.co/datasets/Mike2481/DrugClaw_resources_data" class="btn-primary" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a4 4 0 0 1 4 4v2h1a3 3 0 1 1 0 6h-1v2a4 4 0 1 1-8 0v-2H7a3 3 0 1 1 0-6h1V7a4 4 0 0 1 4-4zm2 6V7a2 2 0 1 0-4 0v2h4zm-4 6v2a2 2 0 1 0 4 0v-2h-4z"/></svg>
+        Full Resources
       </a>
-      <a href="https://github.com/QSong-github/DrugClaw/blob/main/README_CN.md" class="btn-secondary" target="_blank">
-        📖 中文文档
+      <a href="https://github.com/QSong-github/DrugClaw/blob/main/support/DrugClaw_Paper.pdf" class="btn-secondary" target="_blank">
+        Technical Report
       </a>
     </div>
   </div>
@@ -730,7 +772,7 @@ print(result[<span style="color:var(--yellow)">"answer"</span>])
     <a href="https://github.com/QSong-github/DrugClaw/blob/main/README_CN.md" target="_blank">中文文档</a>
     <a href="https://github.com/QSong-github/DrugClaw/blob/main/LICENSE" target="_blank">MIT License</a>
   </div>
-  <p>DrugClaw — Agentic RAG for Drug Intelligence · Made with 🦞 by <a href="https://github.com/QSong-github" target="_blank">QSong Lab</a></p>
+  <p>DrugClaw · Evidence-grounded retrieval, reasoning, and evidence synthesis for drug questions · <a href="https://github.com/QSong-github" target="_blank">QSong Lab</a></p>
 </footer>
 
 <script>
