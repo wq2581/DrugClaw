@@ -94,7 +94,6 @@ python -m drugclaw run --query "What are the known drug targets of imatinib?"
 ## 常用命令
 
 ```bash
-python -m drugclaw run --query "What are the approved indications of metformin?"
 python -m drugclaw run --query "What pharmacogenomic factors affect clopidogrel efficacy and safety?"
 python -m drugclaw run --query "What are the clinically important drug-drug interactions of warfarin?"
 python -m drugclaw list
