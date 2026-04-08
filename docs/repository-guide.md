@@ -5,9 +5,9 @@
 If you are new to DrugClaw, read `README.md` first and use the CLI from the repository root:
 
 ```bash
-python -m drugclaw list
 python -m drugclaw doctor
-python -m drugclaw demo
+python -m drugclaw run --query "What are the known drug targets of imatinib?"
+python -m drugclaw list
 ```
 
 ## Top-Level Directories
@@ -20,25 +20,15 @@ The runtime package. This is the main place to look for the CLI, config handling
 
 Implemented skill code grouped by drug task category.
 
-### `skillexamples/`
+### `maintainers/`
 
-Resource-specific examples and compact operator notes. Useful when you want to understand how a specific skill is supposed to be queried.
-
-### `examples/`
-
-Optional runnable examples and compatibility wrappers. These are not the primary user entrypoints.
-
-### `tools/`
-
-Maintainer-oriented validation and smoke scripts for resources and skill behavior.
-
-### `scripts/legacy/`
-
-Historical helper scripts kept for reference. Treat these as maintainer utilities rather than supported public interfaces.
+Maintainer-oriented smoke scripts, helper utilities, and archived reference assets. These are useful during local development but are not part of the default product surface or the default `pytest` gate.
 
 ### `resources_metadata/`
 
-Local datasets and curated fixtures used by `LOCAL_FILE` skills and tests.
+Tracked minimal subtree that keeps the CLI, demos, and tests runnable right after `git clone`. This directory is the starting point for contributors and automated checks.
+
+The full resource overlay bundle lives on the project's [Hugging Face mirror](https://huggingface.co/datasets/Mike2481/DrugClaw_resources_data). Extracting that tarball at the repository root overlays additional files on top of `resources_metadata/` to unlock broader `LOCAL_FILE` coverage. Maintainers can inspect the builder and validator under `maintainers/resources/`.
 
 ### `support/`
 
@@ -54,10 +44,7 @@ The main runtime surface is:
 
 Support material includes:
 
-- `examples/`
-- `skillexamples/`
-- `tools/`
-- `scripts/legacy/`
+- `maintainers/`
 - `docs/`
 
 ## Contributor Orientation
@@ -66,4 +53,6 @@ If you are debugging the package behavior, start in `drugclaw/`.
 
 If you are checking whether a skill is implemented or data-backed, look in `skills/` and `resources_metadata/`.
 
-If you are validating a specific resource path or historical example, check `skillexamples/`, `tools/`, and `scripts/legacy/`.
+If you are validating a specific resource path or maintainer utility, check `skills/` and `maintainers/`.
+
+If you need machine-local scratch scripts, notes, or throwaway dev helpers, keep them under `.devlocal/` so they stay out of version control.
