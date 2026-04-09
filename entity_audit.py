@@ -56,33 +56,37 @@ DOCUMENT_SKILLS = {
     "Web Search",
 }
 
-# Per-skill native payload keys that *must* be present for the record to be
-# considered properly structured. Only relational / KG skills are listed here.
+# Per-skill native keys to validate structural completeness.
+# Most skills put their native identifiers in a nested "metadata" dict inside
+# the record, so they end up in structured_payload["metadata"] after
+# build_evidence_items_for_skill strips the standard top-level fields.
+# ChEMBL is the exception: it emits its native fields at the top level.
+# _payload_has_expected_keys() checks both levels automatically.
 SKILL_EXPECTED_KEYS: Dict[str, List[str]] = {
     # DTI
-    "ChEMBL":                  ["chembl_id", "target_chembl_id"],
-    "DGIdb":                   ["gene_name"],
+    "ChEMBL":                  ["chembl_id", "target_chembl_id"],   # top-level in payload
+    "DGIdb":                   ["dgidb_sources"],                    # in payload["metadata"]
     "BindingDB":               ["ligand_name", "target_name"],
-    "Open Targets Platform":   ["targetId"],
+    "Open Targets Platform":   ["target_id", "gene_symbol"],         # in payload["metadata"]
     "DTC":                     ["target_id"],
     "TTD":                     ["TargetID"],
     "STITCH":                  ["chemical", "protein"],
     # ADR
-    "SIDER":                   ["side_effect_name"],
-    "FAERS":                   ["reaction"],
+    "SIDER":                   ["stitch_id"],                        # in payload["metadata"]
+    "FAERS":                   ["report_count"],                     # in payload["metadata"]
     "ADRECS":                  ["adr_id"],
     "NSIDEs":                  ["concept_name"],
     # DDI
-    "DDInter":                 ["drug1_name", "drug2_name"],
-    "MecDDI":                  ["mechanism"],
+    "DDInter":                 ["severity"],                         # in payload["metadata"]
+    "MecDDI":                  ["mechanism"],                        # in payload["metadata"]
     "KEGG Drug":               ["drug1", "drug2"],
     # Drug Repurposing
-    "RepoDB":                  ["drug_name", "ind_name", "status"],
-    "DRKG":                    ["relation"],
+    "RepoDB":                  ["drug_name", "ind_name", "status"],  # in payload["metadata"]
+    "DRKG":                    ["raw_relation"],                     # in payload["metadata"]
     "CancerDR":                ["drug_name"],
     "Repurposing Hub":         ["name"],
     # PGx
-    "PharmGKB":                ["pharmgkb_id"],
+    "PharmGKB":                ["pharmgkb_id", "pharmgkb_gene_id"],  # in payload["metadata"]
     "CPIC":                    ["drug", "gene"],
     # Drug Knowledge
     "DrugBank":                ["drugbank_id"],
@@ -140,7 +144,12 @@ def _payload_has_expected_keys(payload: Dict[str, Any], skill: str) -> bool:
     expected = SKILL_EXPECTED_KEYS.get(skill)
     if not expected:
         return True  # no expectation → can't fail
-    return any(k in payload for k in expected)
+    # Skills store native identifiers either at top level (e.g. ChEMBL) or in
+    # a nested "metadata" dict that survives build_evidence_items_for_skill.
+    nested = payload.get("metadata") or {}
+    if not isinstance(nested, dict):
+        nested = {}
+    return any(k in payload or k in nested for k in expected)
 
 
 def _entity_fill(item: Dict[str, Any]) -> Tuple[bool, bool]:
@@ -244,10 +253,41 @@ def run_single(
         print("\n-- ABSENT skills (requested but 0 evidence items returned) --")
         for sk in sorted(absent):
             d = diag.get(sk, {})
-            error = d.get("error") or "(not in diagnostics)"
             strategy = d.get("strategy", "?")
-            diag_rec = d.get("records", "?")
-            print(f"  {sk:<30}  strategy={strategy}  records={diag_rec}  error={error[:120]}")
+            diag_rec = d.get("records", "?") if d else "?"
+            # Distinguish three failure modes:
+            #   filtered_out  → dropped before coder (is_available() failed / not registered)
+            #   zero results  → reached coder, returned 0 records, no error logged
+            #   error         → reached coder, returned 0 records with an error message
+            if strategy == "filtered_out":
+                error_label = "filtered_out: " + (d.get("error") or "is_available() returned False")
+            elif not d:
+                error_label = "not in diagnostics (filtered before coder)"
+            elif d.get("error"):
+                error_label = "error: " + d["error"][:100]
+            else:
+                error_label = "zero results, no error (data file missing or empty match)"
+            print(f"  {sk:<30}  strategy={strategy}  records={diag_rec}  {error_label}")
+            # Try to surface is_available() reason directly from skill registry
+            try:
+                retriever = getattr(system, "retriever", None)
+                registry = getattr(retriever, "skill_registry", None) if retriever else None
+                if registry:
+                    skill_obj = registry.get_skill(sk)
+                    if skill_obj is None:
+                        print(f"    ↳ skill_registry.get_skill('{sk}') returned None — check skill name spelling")
+                    elif hasattr(skill_obj, "is_available"):
+                        avail = skill_obj.is_available()
+                        print(f"    ↳ skill.is_available() = {avail}", end="")
+                        # Try to show config key for LOCAL_FILE skills
+                        for attr in ("_tsv_path", "_csv_path", "_data_path", "_file_path"):
+                            val = getattr(skill_obj, attr, None)
+                            if val:
+                                print(f"  (data path: {val})", end="")
+                                break
+                        print()
+            except Exception as probe_err:
+                print(f"    ↳ probe error: {probe_err}")
 
     # ── Sample payload ──────────────────────────────────────────────────────
     if items:
@@ -326,12 +366,21 @@ def run_matrix(system, ThinkingMode, out_dir: Path) -> None:
             print(f"    ABSENT: {sorted(absent)}")
             for sk in sorted(absent):
                 d = diag.get(sk, {})
+                strategy = d.get("strategy", "?")
+                if strategy == "filtered_out":
+                    err_label = "filtered_out: " + (d.get("error") or "is_available() False")
+                elif not d:
+                    err_label = "filtered before coder (not in diagnostics)"
+                elif d.get("error"):
+                    err_label = "error: " + d["error"][:80]
+                else:
+                    err_label = "zero results, no error (missing data file?)"
                 rows.append({
                     "qtype": qtype, "skill": sk, "cat": "ABSENT", "n": 0,
                     "src_fill": 0.0, "tgt_fill": 0.0,
                     "payload_fill": 0.0, "native_fill": 0.0,
-                    "strategy": d.get("strategy", "?"),
-                    "error": (d.get("error") or "not in diagnostics")[:120],
+                    "strategy": strategy,
+                    "error": err_label[:120],
                 })
 
         print(f"    elapsed: {elapsed:.1f}s")
